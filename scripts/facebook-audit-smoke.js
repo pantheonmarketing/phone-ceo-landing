@@ -32,6 +32,8 @@ async function startFixture() {
   const address = server.address()
   return {
     url: `http://127.0.0.1:${address.port}/facebook-page`,
+    html: () => html,
+    recordSend: () => { sends += 1 },
     sends: () => sends,
     stop: () => new Promise(resolve => server.close(resolve))
   }
@@ -83,7 +85,6 @@ async function main() {
       customerQuestion: 'Do you have availability this week and what does it cost?',
       authorized: true
     })
-    request.pageUrl = fixture.url
     const record = createAuditRecord(request, hashReportToken(createReportToken()))
     await store.create(record)
 
@@ -92,6 +93,14 @@ async function main() {
       channel: process.env.FACEBOOK_AUDIT_BROWSER_CHANNEL || 'chrome',
       headless: true,
       pollIntervalMs: 100
+    })
+    await browser.launch()
+    await browser.context.route('https://facebook.com/**', async route => {
+      if (new URL(route.request().url()).pathname === '/fixture-send') {
+        fixture.recordSend()
+        return route.fulfill({ status: 204, body: '' })
+      }
+      return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: fixture.html() })
     })
     const notifications = []
     const worker = new AuditWorker({
@@ -117,7 +126,7 @@ async function main() {
       console.log('Controlled browser smoke: SKIP - Linux/WSL has no configured Chrome executable; run this smoke in the supported Windows environment.')
       return
     }
-    const dashboardHtml = await (await fetch(dashboardState.url)).text()
+    const dashboardResponse = await fetch(dashboardState.url)
     const dashboardData = await (await fetch(`${dashboardState.url}api/audits`)).json()
     const eventTypes = result.events.map(event => event.type)
 
@@ -130,7 +139,9 @@ async function main() {
     for (const required of ['submitted', 'starting', 'page_opening', 'page_opened', 'messenger_reachable', 'message_prepared', 'message_sent', 'waiting', 'reply_detected', 'passed']) {
       assert.ok(eventTypes.includes(required), `Missing smoke event: ${required}`)
     }
-    assert.match(dashboardHtml, /Every worker action/i)
+    assert.equal(dashboardResponse.status, 200)
+    assert.equal(dashboardResponse.headers.get('x-frame-options'), 'DENY')
+    assert.match(dashboardResponse.headers.get('content-type'), /text\/html/i)
     assert.equal(dashboardData.audits[0].auditId, record.auditId)
     assert.equal('reportTokenHash' in dashboardData.audits[0], false)
 

@@ -71,7 +71,12 @@ class AuditWorker {
       await this._event(auditId, 'page_opening', { status: 'starting', message: 'Opening submitted Facebook Page' })
       const pageState = await this.browser.openPage(claimed)
       if (!pageState?.loggedIn) {
-        const error = await this._error(auditId, 'facebook_login_required', 'Dedicated Facebook audit profile must be logged in')
+        const loginError = pageState?.reason === 'facebook_page_host_unverified'
+        const error = await this._error(
+          auditId,
+          loginError ? 'facebook_page_host_unverified' : 'facebook_login_required',
+          loginError ? 'The opened page was not verified as a Facebook Page' : 'Dedicated Facebook audit profile must be logged in'
+        )
         await this._notifyWithoutChangingResult(error)
         return error
       }

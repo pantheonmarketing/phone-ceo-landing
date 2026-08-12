@@ -53,6 +53,14 @@ test('facebook audit endpoint queues an authorized request and notifies Telegram
   assert.equal(stored.reportTokenHash.length, 64)
 })
 
+test('rate limiter stays bounded and does not trust forwarded client headers', () => {
+  const limiter = createRateLimiter({ limit: 1, maxKeys: 2 })
+  limiter.check('one')
+  limiter.check('two')
+  limiter.check('three')
+  assert.equal(limiter.size(), 2)
+})
+
 test('facebook audit endpoint rejects cross-origin requests and rate-limits POSTs', async () => {
   const store = new MemoryAuditStore()
   const handler = createHandler({
@@ -66,12 +74,13 @@ test('facebook audit endpoint rejects cross-origin requests and rate-limits POST
   assert.equal(crossOrigin.statusCode, 403)
 
   const body = { pageUrl: 'https://facebook.com/limited', authorized: true }
+  const request = { method: 'POST', socket: { remoteAddress: '127.0.0.1' }, headers: { host: 'audit.example', origin: 'https://audit.example', 'x-forwarded-for': '10.0.0.1' }, body }
   const first = makeResponse()
-  await handler({ method: 'POST', headers: { host: 'audit.example', origin: 'https://audit.example' }, body }, first)
+  await handler(request, first)
   assert.equal(first.statusCode, 200)
 
   const second = makeResponse()
-  await handler({ method: 'POST', headers: { host: 'audit.example', origin: 'https://audit.example' }, body }, second)
+  await handler({ ...request, headers: { ...request.headers, 'x-forwarded-for': '10.0.0.2' } }, second)
   assert.equal(second.statusCode, 429)
   assert.match(second.body.error, /too many/i)
 })

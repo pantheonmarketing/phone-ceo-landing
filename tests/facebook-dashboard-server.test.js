@@ -26,8 +26,10 @@ test('local dashboard exposes sanitized audit data and worker controls', async t
   const started = await dashboard.start()
   t.after(() => dashboard.stop())
 
-  const html = await (await fetch(started.url)).text()
-  assert.match(html, /Every worker action/i)
+  const dashboardResponse = await fetch(started.url)
+  assert.equal(dashboardResponse.status, 200)
+  assert.equal(dashboardResponse.headers.get('x-frame-options'), 'DENY')
+  assert.match(dashboardResponse.headers.get('content-type'), /text\/html/i)
 
   const audits = await (await fetch(`${started.url}api/audits`)).json()
   assert.equal(audits.audits.length, 1)

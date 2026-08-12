@@ -13,15 +13,26 @@ const { createAuditStoreFromEnv } = require('../lib/facebook-audit-store')
 const MAX_REQUEST_BYTES = 16 * 1024
 const DEFAULT_POST_LIMIT = 5
 const DEFAULT_POST_WINDOW_MS = 10 * 60 * 1000
+const DEFAULT_MAX_RATE_LIMIT_KEYS = 10000
 
-function createRateLimiter({ limit = DEFAULT_POST_LIMIT, windowMs = DEFAULT_POST_WINDOW_MS, now = () => Date.now() } = {}) {
+function createRateLimiter({
+  limit = DEFAULT_POST_LIMIT,
+  windowMs = DEFAULT_POST_WINDOW_MS,
+  maxKeys = DEFAULT_MAX_RATE_LIMIT_KEYS,
+  now = () => Date.now()
+} = {}) {
   const buckets = new Map()
+  const capacity = Number.isFinite(maxKeys) ? Math.max(1, Math.floor(maxKeys)) : DEFAULT_MAX_RATE_LIMIT_KEYS
   return {
     check(key) {
       const current = now()
+      for (const [storedKey, bucket] of buckets) {
+        if (current - bucket.startedAt >= windowMs) buckets.delete(storedKey)
+      }
       const bucketKey = String(key || 'unknown').slice(0, 200)
       const previous = buckets.get(bucketKey)
-      if (!previous || current - previous.startedAt >= windowMs) {
+      if (!previous) {
+        while (buckets.size >= capacity) buckets.delete(buckets.keys().next().value)
         buckets.set(bucketKey, { startedAt: current, count: 1 })
         return { allowed: true, remaining: Math.max(0, limit - 1) }
       }
@@ -33,7 +44,8 @@ function createRateLimiter({ limit = DEFAULT_POST_LIMIT, windowMs = DEFAULT_POST
       }
       previous.count += 1
       return { allowed: true, remaining: Math.max(0, limit - previous.count) }
-    }
+    },
+    size: () => buckets.size
   }
 }
 
@@ -59,8 +71,7 @@ function requestOriginAllowed(req) {
 }
 
 function clientKey(req) {
-  const forwarded = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim()
-  return forwarded || String(req.headers?.['x-real-ip'] || '').trim() || String(req.socket?.remoteAddress || 'unknown')
+  return String(req.socket?.remoteAddress || req.ip || 'unknown')
 }
 
 function requestTooLarge(body) {
