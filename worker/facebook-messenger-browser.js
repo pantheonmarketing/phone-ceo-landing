@@ -1,5 +1,8 @@
 const { chromium } = require('playwright-core')
 
+const FACEBOOK_HOSTS = new Set(['facebook.com', 'www.facebook.com', 'm.facebook.com', 'fb.com', 'www.fb.com'])
+const MESSENGER_HOSTS = new Set(['messenger.com', 'www.messenger.com'])
+
 function normalizeEntry(value) {
   const text = value && typeof value === 'object' ? value.text : value
   return String(text || '').replace(/\s+/g, ' ').trim()
@@ -54,6 +57,20 @@ function sameFacebookPageTarget(submitted, navigated) {
   return normalizedFacebookPath(target) === normalizedFacebookPath(navigated)
 }
 
+function sameUrl(left, right) {
+  return left.protocol === right.protocol &&
+    left.hostname.toLowerCase() === right.hostname.toLowerCase() &&
+    normalizedFacebookPath(left) === normalizedFacebookPath(right) &&
+    left.search === right.search
+}
+
+function isMessengerDestination(url) {
+  if (MESSENGER_HOSTS.has(url.hostname.toLowerCase())) {
+    return /^\/(?:messages\/)?t\//i.test(url.pathname)
+  }
+  return FACEBOOK_HOSTS.has(url.hostname.toLowerCase()) && /^\/messages\/t\//i.test(url.pathname)
+}
+
 class FacebookMessengerBrowser {
   constructor({
     profileDirectory,
@@ -80,8 +97,9 @@ class FacebookMessengerBrowser {
     this.baselineEntries = new Set()
     this.sentMessage = ''
     this.auditId = ''
-    this.sendStartedAtMs = null
+    this.targetPageUrl = ''
     this.sentMessageEvidence = null
+    this.expectedMessengerDestination = null
   }
 
   async launch() {
@@ -105,8 +123,9 @@ class FacebookMessengerBrowser {
           this.baselineEntries = new Set()
           this.sentMessage = ''
           this.auditId = ''
-          this.sendStartedAtMs = null
+          this.targetPageUrl = ''
           this.sentMessageEvidence = null
+          this.expectedMessengerDestination = null
         })
       }
     } catch {
@@ -130,6 +149,7 @@ class FacebookMessengerBrowser {
   async openPage(audit) {
     const context = await this.launch()
     this.auditId = audit.auditId
+    this.targetPageUrl = audit.pageUrl
     this.page = await context.newPage()
     try {
       await this.page.goto(audit.pageUrl, { waitUntil: 'domcontentloaded' })
@@ -147,8 +167,7 @@ class FacebookMessengerBrowser {
     } catch {
       return { loggedIn: false, dedicatedProfileSelected: true, reason: 'facebook_page_host_unverified' }
     }
-    const acceptedHosts = new Set(['facebook.com', 'www.facebook.com', 'm.facebook.com', 'fb.com', 'www.fb.com'])
-    if (navigatedUrl.protocol !== 'https:' || !acceptedHosts.has(navigatedUrl.hostname.toLowerCase())) {
+    if (navigatedUrl.protocol !== 'https:' || !FACEBOOK_HOSTS.has(navigatedUrl.hostname.toLowerCase())) {
       return { loggedIn: false, dedicatedProfileSelected: true, reason: 'facebook_page_host_unverified' }
     }
     const loginUrl = /\/(login|checkpoint)(?:\/|\?|$)/i.test(navigatedUrl.pathname)
@@ -167,7 +186,7 @@ class FacebookMessengerBrowser {
       const sessionLoginField = await sessionPage.locator('input[name="email"], input[name="pass"]').first().isVisible().catch(() => false)
       const sessionEvidence = await this._hasAuthenticatedSessionEvidence(sessionPage)
       authenticatedSession = sessionUrl.protocol === 'https:' &&
-        acceptedHosts.has(sessionUrl.hostname.toLowerCase()) &&
+        FACEBOOK_HOSTS.has(sessionUrl.hostname.toLowerCase()) &&
         sessionUrl.pathname !== '/' &&
         !sessionLoginUrl &&
         !sessionLoginField &&
@@ -244,8 +263,43 @@ class FacebookMessengerBrowser {
     }
   }
 
-  async openMessenger() {
+  async _candidateDestination(candidate) {
+    if (typeof candidate.getAttribute !== 'function') return null
+    const href = await Promise.resolve(candidate.getAttribute('href')).catch(() => null)
+    if (!href) return null
+    try {
+      const destination = new URL(href, this.page.url())
+      if (destination.protocol !== 'https:' || (!FACEBOOK_HOSTS.has(destination.hostname.toLowerCase()) && !MESSENGER_HOSTS.has(destination.hostname.toLowerCase()))) return false
+      if (!isMessengerDestination(destination) && !sameFacebookPageTarget(this.targetPageUrl, destination)) return false
+      destination.hash = ''
+      return destination
+    } catch {
+      return false
+    }
+  }
+
+  async _hasVerifiedMessengerDestination(page, expectedDestination = null) {
+    if (!this.targetPageUrl) return false
+    let current
+    try {
+      current = new URL(page.url())
+    } catch {
+      return false
+    }
+    if (current.protocol !== 'https:') return false
+    if (FACEBOOK_HOSTS.has(current.hostname.toLowerCase()) && sameFacebookPageTarget(this.targetPageUrl, current)) return true
+    if (!isMessengerDestination(current) || !expectedDestination) return false
+    return sameUrl(current, expectedDestination)
+  }
+
+  async openMessenger(audit = null) {
+    if (audit?.pageUrl) this.targetPageUrl = audit.pageUrl
+    this.expectedMessengerDestination = null
     this.composer = await this._findComposer()
+    if (this.composer && !await this._hasVerifiedMessengerDestination(this.page)) {
+      this.composer = null
+      return { reachable: false, reason: 'messenger_destination_unverified' }
+    }
     if (!this.composer) {
       const candidates = [
         this.page.locator('[data-audit-action="message"]'),
@@ -260,8 +314,11 @@ class FacebookMessengerBrowser {
         for (let index = 0; index < count; index += 1) {
           const candidate = group.nth(index)
           if (!await candidate.isVisible().catch(() => false)) continue
+          const expectedDestination = await this._candidateDestination(candidate)
+          if (expectedDestination === false) continue
           await candidate.click()
           clicked = true
+          this.expectedMessengerDestination = expectedDestination
           break
         }
         if (clicked) break
@@ -271,14 +328,28 @@ class FacebookMessengerBrowser {
       const expiresAt = Date.now() + 10000
       while (Date.now() < expiresAt) {
         const popup = this.context.pages().find(page => !pagesBefore.has(page))
-        if (popup) this.page = popup
-        this.composer = await this._findComposer(this.page)
-        if (this.composer) break
+        if (popup) {
+          let popupUrl = ''
+          try { popupUrl = popup.url() } catch {}
+          if (popupUrl && popupUrl !== 'about:blank' && !await this._hasVerifiedMessengerDestination(popup, this.expectedMessengerDestination)) {
+            await Promise.resolve(popup.close?.()).catch(() => {})
+            return { reachable: false, reason: 'messenger_destination_unverified' }
+          }
+          this.page = popup
+        }
+        if (await this._hasVerifiedMessengerDestination(this.page, this.expectedMessengerDestination)) {
+          this.composer = await this._findComposer(this.page)
+          if (this.composer) break
+        }
         await this.page.waitForTimeout(250)
       }
     }
 
     if (!this.composer) return { reachable: false }
+    if (!await this._hasVerifiedMessengerDestination(this.page, this.expectedMessengerDestination)) {
+      this.composer = null
+      return { reachable: false, reason: 'messenger_destination_unverified' }
+    }
     if (!await this._captureStableBaseline()) return { reachable: false, reason: 'conversation_baseline_unstable' }
     return { reachable: true }
   }
@@ -306,7 +377,6 @@ class FacebookMessengerBrowser {
     if (!await this._captureStableBaseline()) {
       throw Object.assign(new Error('The Messenger conversation did not reach a stable baseline'), { code: 'conversation_baseline_unstable' })
     }
-    this.sendStartedAtMs = Date.now()
     await this.composer.fill(this.sentMessage)
     await this.composer.press('Enter')
     const verificationDeadline = Date.now() + 6000
@@ -330,7 +400,7 @@ class FacebookMessengerBrowser {
   }
 
   async observeUntil({ deadlineAt, onReply }) {
-    if (!this.sentMessageEvidence || !Number.isFinite(this.sendStartedAtMs)) {
+    if (!this.sentMessageEvidence || !Number.isFinite(this.sentMessageEvidence.timestampMs)) {
       throw Object.assign(new Error('The conversation did not provide reliable post-send evidence'), { code: 'conversation_post_send_evidence_unavailable' })
     }
     const deadlineMs = new Date(deadlineAt).getTime()
@@ -343,7 +413,7 @@ class FacebookMessengerBrowser {
         sentMessage: this.sentMessage,
         auditId: this.auditId,
         seen,
-        minTimestampMs: this.sendStartedAtMs
+        minTimestampMs: this.sentMessageEvidence.timestampMs
       })
       for (const text of entries) {
         const receivedAt = new Date().toISOString()
@@ -373,7 +443,8 @@ class FacebookMessengerBrowser {
     this.baselineEntries = new Set()
     this.sentMessage = ''
     this.auditId = ''
-    this.sendStartedAtMs = null
+    this.targetPageUrl = ''
+    this.expectedMessengerDestination = null
     this.sentMessageEvidence = null
   }
 

@@ -2,6 +2,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 
 const { FacebookMessengerBrowser, selectNewConversationEntries } = require('../worker/facebook-messenger-browser')
+const { createLoginBrowser } = require('../worker/facebook-login')
 const { configureFixtureBrowser, installFixtureRoutes } = require('../scripts/facebook-audit-smoke')
 
 test('controlled smoke installs fixture routes when the worker launches the browser', async () => {
@@ -83,6 +84,80 @@ test('sendMessage timestamps only after conversation verification', async () => 
 
   assert.equal(nowCalls, 1)
   assert.equal(result.sentAt, '2026-08-13T08:00:06.000Z')
+})
+
+test('observation uses the confirmed sent timestamp as its reply boundary', async () => {
+  const confirmedAt = Date.now() - 1000
+  let reads = 0
+  const replies = []
+  const browser = new FacebookMessengerBrowser({ profileDirectory: 'test-profile', pollIntervalMs: 1 })
+  browser.sentMessage = 'Audit question'
+  browser.auditId = 'FBA-ABCDEF12'
+  browser.sentMessageEvidence = { id: 'sent-1', timestampMs: confirmedAt }
+  browser.sendStartedAtMs = confirmedAt - 500
+  browser.page = { isClosed: () => false, waitForTimeout: async () => {} }
+  browser._collectEntries = async () => {
+    reads += 1
+    return reads === 1
+      ? [{ text: 'Delayed history', id: 'history-1', timestampMs: confirmedAt - 1 }]
+      : [{ text: 'Useful reply', id: 'reply-1', timestampMs: confirmedAt + 1 }]
+  }
+
+  await browser.observeUntil({
+    deadlineAt: new Date(Date.now() + 1000),
+    onReply: async reply => {
+      replies.push(reply.text)
+      return { stop: true }
+    }
+  })
+
+  assert.deepEqual(replies, ['Useful reply'])
+})
+
+test('openMessenger rejects a redirected Messenger destination', async () => {
+  let popupClosed = false
+  const source = {
+    url: () => 'https://www.facebook.com/example',
+    locator: selector => ({
+      async count() { return selector === '[data-audit-action="message"]' ? 1 : 0 },
+      nth() {
+        return {
+          async isVisible() { return true },
+          async getAttribute() { return 'https://www.messenger.com/t/intended' },
+          async click() { pages.push(popup) }
+        }
+      }
+    }),
+    getByRole: () => ({ count: async () => 0 })
+  }
+  const popup = {
+    url: () => 'https://www.messenger.com/t/wrong-page',
+    close: async () => { popupClosed = true }
+  }
+  const pages = [source]
+  const browser = new FacebookMessengerBrowser({ profileDirectory: 'test-profile' })
+  browser.page = source
+  browser.targetPageUrl = source.url()
+  browser.context = { pages: () => pages }
+  browser._findComposer = async () => null
+
+  const result = await browser.openMessenger()
+
+  assert.equal(result.reachable, false)
+  assert.equal(result.reason, 'messenger_destination_unverified')
+  assert.equal(popupClosed, true)
+})
+
+test('login browser passes the configured executable to the browser adapter', () => {
+  const browser = createLoginBrowser({
+    FACEBOOK_AUDIT_PROFILE_DIR: 'login-profile',
+    FACEBOOK_AUDIT_BROWSER_CHANNEL: 'chromium',
+    FACEBOOK_AUDIT_EXECUTABLE_PATH: '/opt/chromium/chrome'
+  })
+
+  assert.equal(browser.profileDirectory, 'login-profile')
+  assert.equal(browser.channel, 'chromium')
+  assert.equal(browser.executablePath, '/opt/chromium/chrome')
 })
 
 test('openPage fails closed when the navigated host is not Facebook', async () => {

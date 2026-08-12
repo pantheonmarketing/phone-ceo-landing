@@ -51,6 +51,22 @@ test('MemoryAuditStore update enforces expected version', async () => {
   )
 })
 
+test('FileAuditStore claims the oldest queued audit beyond the display window', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'facebook-audit-queue-'))
+  t.after(() => fs.rm(directory, { recursive: true, force: true }))
+  const store = new FileAuditStore({ directory })
+  const oldestAt = new Date('2026-08-13T08:00:00.000Z')
+  const records = Array.from({ length: 101 }, (_, index) => makeRecord(
+    index === 0 ? 'Oldest Queued Business' : `Queued Business ${index}`,
+    new Date(oldestAt.getTime() + index * 1000)
+  ))
+  for (const record of records) await store.create(record)
+
+  const claimed = await store.claimNext('worker-a', new Date('2026-08-13T09:00:00.000Z'))
+
+  assert.equal(claimed.requestedAt, oldestAt.toISOString())
+})
+
 test('FileAuditStore persists queue records across store instances', async t => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'facebook-audit-store-'))
   t.after(() => fs.rm(directory, { recursive: true, force: true }))
@@ -100,6 +116,35 @@ test('Vercel Blob listing continues past nonmatching records', async () => {
 
   assert.equal(listCalls, 2)
   assert.deepEqual(result.map(record => record.auditId), [queued.auditId])
+})
+
+test('Vercel Blob claim listing can scan the full durable queue', async () => {
+  const oldQueued = makeRecord('Old Queued Business', new Date('2026-08-13T08:00:00.000Z'))
+  const newerQueued = makeRecord('New Queued Business', new Date('2026-08-13T08:01:00.000Z'))
+  const records = new Map([
+    [`facebook-audits/records/${oldQueued.auditId}.json`, oldQueued],
+    [`facebook-audits/records/${newerQueued.auditId}.json`, newerQueued]
+  ])
+  let listCalls = 0
+  const blob = {
+    async list(options) {
+      assert.equal(options.limit, 1000)
+      listCalls += 1
+      return listCalls === 1
+        ? { blobs: [{ pathname: `facebook-audits/records/${newerQueued.auditId}.json` }], hasMore: true, cursor: 'next' }
+        : { blobs: [{ pathname: `facebook-audits/records/${oldQueued.auditId}.json` }], hasMore: false }
+    },
+    async get(pathname) {
+      const record = records.get(pathname)
+      return { statusCode: 200, stream: Readable.from([JSON.stringify(record)]), blob: { etag: '"test"' } }
+    }
+  }
+  const store = new VercelBlobAuditStore({ token: 'test', blob })
+
+  const queued = await store.list({ statuses: ['queued'], limit: null })
+
+  assert.equal(listCalls, 2)
+  assert.deepEqual(queued.map(record => record.auditId), [newerQueued.auditId, oldQueued.auditId])
 })
 
 test('Vercel Blob rate limiting is shared and bounded to one conditional record', async () => {
