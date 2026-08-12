@@ -2,6 +2,38 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 
 const { FacebookMessengerBrowser, selectNewConversationEntries } = require('../worker/facebook-messenger-browser')
+const { installFixtureRoutes } = require('../scripts/facebook-audit-smoke')
+
+test('controlled smoke routes both Facebook hosts through the fixture', async () => {
+  const routes = []
+  let sent = 0
+  const context = {
+    async route(pattern, handler) {
+      routes.push({ pattern, handler })
+    }
+  }
+  const fixture = { html: () => '<fixture>', recordSend: () => { sent += 1 } }
+
+  await installFixtureRoutes(context, fixture)
+
+  assert.deepEqual(routes.map(route => route.pattern), [
+    'https://facebook.com/**',
+    'https://www.facebook.com/**'
+  ])
+  let sendResponse
+  await routes[0].handler({
+    request: () => ({ url: () => 'https://facebook.com/fixture-send' }),
+    fulfill: async response => { sendResponse = response }
+  })
+  assert.deepEqual(sendResponse, { status: 204, body: '' })
+  assert.equal(sent, 1)
+  let pageResponse
+  await routes[1].handler({
+    request: () => ({ url: () => 'https://www.facebook.com/me' }),
+    fulfill: async response => { pageResponse = response }
+  })
+  assert.deepEqual(pageResponse, { status: 200, contentType: 'text/html; charset=utf-8', body: '<fixture>' })
+})
 
 test('sendMessage timestamps only after conversation verification', async () => {
   let verified = false

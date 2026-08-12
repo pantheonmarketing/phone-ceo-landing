@@ -70,6 +70,38 @@ test('Vercel Blob weak read ETags are normalized for conditional writes', () => 
   assert.equal(normalizeBlobEtag('"abc123"'), '"abc123"')
 })
 
+test('Vercel Blob listing continues past nonmatching records', async () => {
+  const terminal = [
+    makeRecord('Terminal One', new Date('2026-08-13T08:00:00.000Z')),
+    makeRecord('Terminal Two', new Date('2026-08-13T08:01:00.000Z')),
+    makeRecord('Terminal Three', new Date('2026-08-13T08:02:00.000Z'))
+  ]
+  terminal.forEach(record => { record.status = 'passed' })
+  const queued = makeRecord('Queued Beyond First Page', new Date('2026-08-13T08:03:00.000Z'))
+  const records = new Map([...terminal, queued].map(record => [
+    `facebook-audits/records/${record.auditId}.json`, record
+  ]))
+  let listCalls = 0
+  const blob = {
+    async list() {
+      listCalls += 1
+      return listCalls === 1
+        ? { blobs: terminal.map(record => ({ pathname: `facebook-audits/records/${record.auditId}.json` })), hasMore: true, cursor: 'next' }
+        : { blobs: [{ pathname: `facebook-audits/records/${queued.auditId}.json` }], hasMore: false }
+    },
+    async get(pathname) {
+      const record = records.get(pathname)
+      return { statusCode: 200, stream: Readable.from([JSON.stringify(record)]), blob: { etag: '"test"' } }
+    }
+  }
+  const store = new VercelBlobAuditStore({ token: 'test', blob })
+
+  const result = await store.list({ statuses: ['queued'], limit: 1 })
+
+  assert.equal(listCalls, 2)
+  assert.deepEqual(result.map(record => record.auditId), [queued.auditId])
+})
+
 test('Vercel Blob rate limiting is shared and bounded to one conditional record', async () => {
   let value = null
   let etag = 0

@@ -71,6 +71,22 @@ async function waitFor(condition, timeoutMs = 5000) {
   throw new Error('Controlled smoke post-result work did not finish')
 }
 
+function createFixtureRouteHandler(fixture) {
+  return async route => {
+    if (new URL(route.request().url()).pathname === '/fixture-send') {
+      fixture.recordSend()
+      return route.fulfill({ status: 204, body: '' })
+    }
+    return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: fixture.html() })
+  }
+}
+
+async function installFixtureRoutes(context, fixture) {
+  const handler = createFixtureRouteHandler(fixture)
+  await context.route('https://facebook.com/**', handler)
+  await context.route('https://www.facebook.com/**', handler)
+}
+
 async function main() {
   const fixture = await startFixture()
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'facebook-audit-smoke-'))
@@ -95,13 +111,7 @@ async function main() {
       pollIntervalMs: 100
     })
     await browser.launch()
-    await browser.context.route('https://facebook.com/**', async route => {
-      if (new URL(route.request().url()).pathname === '/fixture-send') {
-        fixture.recordSend()
-        return route.fulfill({ status: 204, body: '' })
-      }
-      return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: fixture.html() })
-    })
+    await installFixtureRoutes(browser.context, fixture)
     const notifications = []
     const worker = new AuditWorker({
       store,
@@ -164,7 +174,11 @@ async function main() {
   }
 }
 
-main().catch(error => {
-  console.error(`Controlled browser smoke: FAIL - ${error.message}`)
-  process.exitCode = 1
-})
+if (require.main === module) {
+  main().catch(error => {
+    console.error(`Controlled browser smoke: FAIL - ${error.message}`)
+    process.exitCode = 1
+  })
+}
+
+module.exports = { createFixtureRouteHandler, installFixtureRoutes }
