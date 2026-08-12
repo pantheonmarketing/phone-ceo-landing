@@ -155,6 +155,13 @@ test('classifyFacebookReply rejects generic acknowledgements and identifies usef
   assert.equal(useful.hasBookingCta, true)
   assert.equal(useful.hasClearNextAction, true)
 
+  const acknowledgedUseful = classifyFacebookReply('Thanks for contacting us. Our price is $50.', {
+    customerQuestion: 'What does it cost?'
+  })
+  assert.equal(acknowledgedUseful.isAutoAcknowledgement, true)
+  assert.equal(acknowledgedUseful.answersQuestion, true)
+  assert.equal(acknowledgedUseful.isUseful, true)
+
   const unrelated = classifyFacebookReply('We are open.', {
     customerQuestion: 'What is your refund policy?'
   })

@@ -1,18 +1,34 @@
 const { chromium } = require('playwright-core')
 
 function normalizeEntry(value) {
-  return String(value || '').replace(/\s+/g, ' ').trim()
+  const text = value && typeof value === 'object' ? value.text : value
+  return String(text || '').replace(/\s+/g, ' ').trim()
 }
 
-function selectNewConversationEntries({ baseline, current, sentMessage, auditId, seen }) {
+function entryTimestampMs(value) {
+  const timestamp = value && typeof value === 'object' ? value.timestampMs : null
+  return Number.isFinite(timestamp) ? timestamp : null
+}
+
+function entryIdentity(value) {
+  if (value && typeof value === 'object' && value.id) return String(value.id)
+  return normalizeEntry(value)
+}
+
+function selectNewConversationEntries({ baseline, current, sentMessage, auditId, seen, minTimestampMs = null }) {
   const sent = normalizeEntry(sentMessage)
   const id = String(auditId || '').toLowerCase()
   const found = []
   for (const raw of current) {
     const entry = normalizeEntry(raw)
-    if (!entry || entry.length > 3000 || baseline.has(entry) || seen.has(entry)) continue
+    const timestampMs = entryTimestampMs(raw)
+    if (!entry || entry.length > 3000 || baseline.has(entry) || seen.has(entryIdentity(raw))) continue
     if (entry === sent || (id && entry.toLowerCase().includes(id))) continue
-    seen.add(entry)
+    if (Number.isFinite(minTimestampMs) && !Number.isFinite(timestampMs)) {
+      throw Object.assign(new Error('The conversation did not provide reliable post-send evidence'), { code: 'conversation_post_send_evidence_unavailable' })
+    }
+    if (Number.isFinite(minTimestampMs) && timestampMs <= minTimestampMs) continue
+    seen.add(entryIdentity(raw))
     found.push(entry)
   }
   return found
@@ -64,6 +80,8 @@ class FacebookMessengerBrowser {
     this.baselineEntries = new Set()
     this.sentMessage = ''
     this.auditId = ''
+    this.sendStartedAtMs = null
+    this.sentMessageEvidence = null
   }
 
   async launch() {
@@ -77,6 +95,20 @@ class FacebookMessengerBrowser {
       if (this.executablePath) launchOptions.executablePath = this.executablePath
       else if (this.channel) launchOptions.channel = this.channel
       this.context = await this.browserType.launchPersistentContext(this.profileDirectory, launchOptions)
+      const context = this.context
+      if (typeof context.once === 'function') {
+        context.once('close', () => {
+          if (this.context !== context) return
+          this.context = null
+          this.page = null
+          this.composer = null
+          this.baselineEntries = new Set()
+          this.sentMessage = ''
+          this.auditId = ''
+          this.sendStartedAtMs = null
+          this.sentMessageEvidence = null
+        })
+      }
     } catch {
       throw Object.assign(new Error('Dedicated audit browser could not start. Confirm it is installed and the audit profile is not open elsewhere.'), {
         code: 'browser_launch_failed',
@@ -180,12 +212,25 @@ class FacebookMessengerBrowser {
 
   async _collectEntries(page = this.page) {
     return page.locator('[data-audit-message], [role="main"] [role="row"], [aria-label*="Messages" i] [role="row"]').evaluateAll(nodes => {
-      const unique = new Set()
+      const unique = new Map()
       for (const node of nodes) {
-        const value = String(node.innerText || node.textContent || '').replace(/\s+/g, ' ').trim()
-        if (value) unique.add(value)
+        const text = String(node.innerText || node.textContent || '').replace(/\s+/g, ' ').trim()
+        if (!text) continue
+        const id = node.getAttribute('data-audit-message-id') || node.getAttribute('data-message-id') || node.getAttribute('data-id') || node.id || ''
+        const timestampNode = node.matches('time[datetime], [data-timestamp], [data-utime]')
+          ? node
+          : node.querySelector('time[datetime], [data-timestamp], [data-utime]')
+        const rawTimestamp = node.getAttribute('data-audit-timestamp') ||
+          node.getAttribute('data-timestamp') ||
+          node.getAttribute('data-utime') ||
+          timestampNode?.getAttribute('datetime') || ''
+        let timestampMs = Number(rawTimestamp)
+        if (!Number.isFinite(timestampMs)) timestampMs = Date.parse(rawTimestamp)
+        if (Number.isFinite(timestampMs) && timestampMs < 100000000000) timestampMs *= 1000
+        const key = id || `${text}:${timestampMs}`
+        if (!unique.has(key)) unique.set(key, { text, id, timestampMs: Number.isFinite(timestampMs) ? timestampMs : null })
       }
-      return [...unique]
+      return [...unique.values()]
     }).catch(() => [])
   }
 
@@ -247,9 +292,11 @@ class FacebookMessengerBrowser {
     if (!this.composer) throw Object.assign(new Error('Messenger composer is not ready'), { code: 'messenger_composer_missing' })
     this.sentMessage = String(message)
     this.auditId = auditId || this.auditId
+    this.sentMessageEvidence = null
     if (!await this._captureStableBaseline()) {
       throw Object.assign(new Error('The Messenger conversation did not reach a stable baseline'), { code: 'conversation_baseline_unstable' })
     }
+    this.sendStartedAtMs = Date.now()
     await this.composer.fill(this.sentMessage)
     await this.composer.press('Enter')
     const verificationDeadline = Date.now() + 6000
@@ -263,10 +310,19 @@ class FacebookMessengerBrowser {
       await this.page.waitForTimeout(200)
     }
     if (!verified) throw Object.assign(new Error('The sent message could not be verified in the conversation'), { code: 'send_not_confirmed' })
+    const sentEntry = (await this._collectEntries()).find(entry => normalizeEntry(entry).toLowerCase().includes(String(this.auditId).toLowerCase()))
+    const sentTimestampMs = entryTimestampMs(sentEntry)
+    if (!sentEntry || !Number.isFinite(sentTimestampMs)) {
+      throw Object.assign(new Error('The sent message did not provide reliable post-send evidence'), { code: 'send_evidence_unavailable' })
+    }
+    this.sentMessageEvidence = { id: entryIdentity(sentEntry), timestampMs: sentTimestampMs }
     return { sentAt: this.now().toISOString() }
   }
 
   async observeUntil({ deadlineAt, onReply }) {
+    if (!this.sentMessageEvidence || !Number.isFinite(this.sendStartedAtMs)) {
+      throw Object.assign(new Error('The conversation did not provide reliable post-send evidence'), { code: 'conversation_post_send_evidence_unavailable' })
+    }
     const deadlineMs = new Date(deadlineAt).getTime()
     const seen = new Set()
     while (Date.now() <= deadlineMs) {
@@ -276,7 +332,8 @@ class FacebookMessengerBrowser {
         current: await this._collectEntries(),
         sentMessage: this.sentMessage,
         auditId: this.auditId,
-        seen
+        seen,
+        minTimestampMs: this.sendStartedAtMs
       })
       for (const text of entries) {
         const receivedAt = new Date().toISOString()
@@ -303,6 +360,11 @@ class FacebookMessengerBrowser {
     if (this.page && !this.page.isClosed()) await this.page.close().catch(() => {})
     this.page = null
     this.composer = null
+    this.baselineEntries = new Set()
+    this.sentMessage = ''
+    this.auditId = ''
+    this.sendStartedAtMs = null
+    this.sentMessageEvidence = null
   }
 
   async shutdown() {

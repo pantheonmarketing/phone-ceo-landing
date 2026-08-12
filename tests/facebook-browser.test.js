@@ -76,7 +76,7 @@ test('sendMessage timestamps only after conversation verification', async () => 
   browser.page = { waitForTimeout: async () => {} }
   browser._collectEntries = async () => {
     verified = true
-    return ['Audit ID: FBA-ABCDEF12']
+    return [{ text: 'Audit ID: FBA-ABCDEF12', id: 'sent-1', timestampMs: Date.now() }]
   }
 
   const result = await browser.sendMessage('Audit question', { auditId: 'FBA-ABCDEF12' })
@@ -163,11 +163,12 @@ test('sendMessage stabilizes the conversation baseline before sending', async ()
     async press() {}
   }
   browser.page = { waitForTimeout: async () => {} }
+  const entry = (text, timestampMs = null) => ({ text, id: text, timestampMs })
   browser._collectEntries = async () => {
     reads += 1
-    if (reads < 3) return reads === 1 ? ['Conversation ready'] : ['Conversation ready', 'Late loaded history']
-    if (reads === 3) return ['Conversation ready', 'Late loaded history']
-    return ['Conversation ready', 'Late loaded history', 'Audit ID: FBA-ABCDEF12']
+    if (reads < 3) return reads === 1 ? [entry('Conversation ready')] : [entry('Conversation ready'), entry('Late loaded history')]
+    if (reads === 3) return [entry('Conversation ready'), entry('Late loaded history')]
+    return [entry('Conversation ready'), entry('Late loaded history'), entry('Audit ID: FBA-ABCDEF12', Date.now())]
   }
 
   await browser.sendMessage('Audit question', { auditId: 'FBA-ABCDEF12' })
@@ -180,6 +181,36 @@ test('sendMessage stabilizes the conversation baseline before sending', async ()
     auditId: 'FBA-ABCDEF12',
     seen: new Set()
   }), ['A new customer reply'])
+})
+
+test('closed browser contexts are cleared before the next launch', async () => {
+  let launches = 0
+  let closeHandler
+  const contexts = [
+    {
+      once(event, handler) { assert.equal(event, 'close'); closeHandler = handler },
+      setDefaultTimeout() {},
+      setDefaultNavigationTimeout() {}
+    },
+    {
+      once() {},
+      setDefaultTimeout() {},
+      setDefaultNavigationTimeout() {}
+    }
+  ]
+  const browser = new FacebookMessengerBrowser({
+    profileDirectory: 'test-profile',
+    browserType: {
+      async launchPersistentContext() { return contexts[launches++] }
+    }
+  })
+
+  const first = await browser.launch()
+  closeHandler()
+  const second = await browser.launch()
+
+  assert.notEqual(first, second)
+  assert.equal(launches, 2)
 })
 
 test('launch uses a configured executable instead of an incompatible browser channel', async () => {
@@ -207,6 +238,33 @@ test('launch uses a configured executable instead of an incompatible browser cha
   assert.equal(launchDirectory, 'test-profile')
   assert.equal(launchOptions.executablePath, '/opt/chromium/chrome')
   assert.equal('channel' in launchOptions, false)
+})
+
+test('selectNewConversationEntries fails closed without post-send timestamps', () => {
+  assert.throws(() => selectNewConversationEntries({
+    baseline: new Set(),
+    current: [
+      { text: 'Delayed history', id: 'history-2', timestampMs: 900 },
+      { text: 'Useful reply', id: 'reply-1', timestampMs: 1100 },
+      'Unverifiable reply'
+    ],
+    sentMessage: 'Audit question',
+    auditId: 'FBA-ABCDEF12',
+    seen: new Set(),
+    minTimestampMs: 1000
+  }), /reliable post-send evidence/)
+
+  assert.deepEqual(selectNewConversationEntries({
+    baseline: new Set(),
+    current: [
+      { text: 'Delayed history', id: 'history-2', timestampMs: 900 },
+      { text: 'Useful reply', id: 'reply-1', timestampMs: 1100 }
+    ],
+    sentMessage: 'Audit question',
+    auditId: 'FBA-ABCDEF12',
+    seen: new Set(),
+    minTimestampMs: 1000
+  }), ['Useful reply'])
 })
 
 test('selectNewConversationEntries ignores baseline and the worker message without losing new replies', () => {
