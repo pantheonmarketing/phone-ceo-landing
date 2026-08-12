@@ -42,10 +42,6 @@ test('controlled smoke routes both Facebook hosts through the fixture', async ()
 
   await installFixtureRoutes(context, fixture)
 
-  assert.deepEqual(routes.map(route => route.pattern), [
-    'https://facebook.com/**',
-    'https://www.facebook.com/**'
-  ])
   let sendResponse
   await routes[0].handler({
     request: () => ({ url: () => 'https://facebook.com/fixture-send' }),

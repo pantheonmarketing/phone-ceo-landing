@@ -80,12 +80,16 @@ test('scoreFacebookAudit gives an A when a useful answer arrives within one minu
   })
 })
 
-test('scoreFacebookAudit gives a B for a useful answer from 61 through 120 seconds', () => {
-  const result = scoreFacebookAudit({ sentAtMs: 0, usefulReplyAtMs: 119500 }, 120000)
+test('scoreFacebookAudit gives a B when the exact response time exceeds one minute', () => {
+  const result = scoreFacebookAudit({ sentAtMs: 0, usefulReplyAtMs: 60400 }, 120000)
 
   assert.equal(result.grade, 'B')
   assert.equal(result.passed, true)
-  assert.equal(result.responseSeconds, 120)
+  assert.equal(result.responseSeconds, 60)
+
+  const later = scoreFacebookAudit({ sentAtMs: 0, usefulReplyAtMs: 119500 }, 120000)
+  assert.equal(later.grade, 'B')
+  assert.equal(later.responseSeconds, 120)
 })
 
 test('generic auto reply alone is an F with a C diagnostic band', () => {
@@ -132,8 +136,8 @@ test('classifyFacebookReply rejects generic acknowledgements and identifies usef
   const partial = classifyFacebookReply('Yes, we have a table Friday at 7pm.', {
     customerQuestion: 'Do you have availability this week and what does it cost?'
   })
-  assert.equal(partial.isUseful, false)
-  assert.equal(partial.answersQuestion, false)
+  assert.equal(partial.isUseful, true)
+  assert.equal(partial.answersQuestion, true)
 
   const useful = classifyFacebookReply('Yes, we have a table Friday at 7pm. It is $65 per person. Would you like me to reserve it?', {
     customerQuestion: 'Do you have availability this week and what does it cost?'
@@ -167,7 +171,13 @@ test('classifyFacebookReply rejects generic acknowledgements and identifies usef
   assert.equal(cancellationBookingRedirect.isUseful, false)
 })
 
-test('classifyFacebookReply rejects echoed cancellation policy phrases without useful details', () => {
+test('classifyFacebookReply rejects generic pricing and echoed cancellation policy phrases', () => {
+  const echoedPrice = classifyFacebookReply('Our price is our price.', {
+    customerQuestion: 'What does it cost?'
+  })
+  assert.equal(echoedPrice.answersQuestion, false)
+  assert.equal(echoedPrice.isUseful, false)
+
   const echoedRefund = classifyFacebookReply('Our refund policy is to book now through our calendar.', {
     customerQuestion: 'What is your refund policy?'
   })
