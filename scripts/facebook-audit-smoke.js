@@ -87,6 +87,20 @@ async function installFixtureRoutes(context, fixture) {
   await context.route('https://www.facebook.com/**', handler)
 }
 
+function configureFixtureBrowser(browser, fixture) {
+  const launch = browser.launch.bind(browser)
+  let routedContext = null
+  browser.launch = async () => {
+    const context = await launch()
+    if (context !== routedContext) {
+      await installFixtureRoutes(context, fixture)
+      routedContext = context
+    }
+    return context
+  }
+  return browser
+}
+
 async function main() {
   const fixture = await startFixture()
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'facebook-audit-smoke-'))
@@ -104,14 +118,12 @@ async function main() {
     const record = createAuditRecord(request, hashReportToken(createReportToken()))
     await store.create(record)
 
-    browser = new FacebookMessengerBrowser({
+    browser = configureFixtureBrowser(new FacebookMessengerBrowser({
       profileDirectory: path.join(temp, 'browser-profile'),
       channel: process.env.FACEBOOK_AUDIT_BROWSER_CHANNEL || 'chrome',
       headless: true,
       pollIntervalMs: 100
-    })
-    await browser.launch()
-    await installFixtureRoutes(browser.context, fixture)
+    }), fixture)
     const notifications = []
     const worker = new AuditWorker({
       store,
@@ -181,4 +193,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { createFixtureRouteHandler, installFixtureRoutes }
+module.exports = { configureFixtureBrowser, createFixtureRouteHandler, installFixtureRoutes }

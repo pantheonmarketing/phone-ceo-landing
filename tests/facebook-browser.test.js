@@ -2,7 +2,29 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 
 const { FacebookMessengerBrowser, selectNewConversationEntries } = require('../worker/facebook-messenger-browser')
-const { installFixtureRoutes } = require('../scripts/facebook-audit-smoke')
+const { configureFixtureBrowser, installFixtureRoutes } = require('../scripts/facebook-audit-smoke')
+
+test('controlled smoke installs fixture routes when the worker launches the browser', async () => {
+  let launches = 0
+  let routeCalls = 0
+  const context = {
+    async route() {
+      routeCalls += 1
+    }
+  }
+  const browser = {
+    async launch() {
+      launches += 1
+      return context
+    }
+  }
+
+  assert.equal(configureFixtureBrowser(browser, { html: () => '<fixture>' }), browser)
+  assert.equal(await browser.launch(), context)
+  assert.equal(await browser.launch(), context)
+  assert.equal(launches, 2)
+  assert.equal(routeCalls, 2)
+})
 
 test('controlled smoke routes both Facebook hosts through the fixture', async () => {
   const routes = []

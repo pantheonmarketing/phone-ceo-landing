@@ -154,4 +154,9 @@ test('classifyFacebookReply rejects generic acknowledgements and identifies usef
     customerQuestion: 'How can I cancel my appointment?'
   })
   assert.equal(unrelatedCancellationAction.isUseful, false)
+
+  const cancellationBookingRedirect = classifyFacebookReply('To cancel, book now through our calendar.', {
+    customerQuestion: 'How can I cancel my appointment?'
+  })
+  assert.equal(cancellationBookingRedirect.isUseful, false)
 })
