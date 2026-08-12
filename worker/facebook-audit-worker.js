@@ -28,6 +28,7 @@ async function main() {
   const browser = new FacebookMessengerBrowser({
     profileDirectory,
     channel: process.env.FACEBOOK_AUDIT_BROWSER_CHANNEL || 'chrome',
+    executablePath: process.env.FACEBOOK_AUDIT_EXECUTABLE_PATH || '',
     headless: process.env.FACEBOOK_AUDIT_HEADLESS === 'true'
   })
   const worker = new AuditWorker({ store, browser, journal, notifyFinal: notifyFinalTelegram })

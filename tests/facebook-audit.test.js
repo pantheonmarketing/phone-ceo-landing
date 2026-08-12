@@ -202,4 +202,16 @@ test('classifyFacebookReply rejects generic pricing and echoed cancellation poli
   })
   assert.equal(vagueRefund.answersQuestion, false)
   assert.equal(vagueRefund.isUseful, false)
+
+  const genericRefund = classifyFacebookReply('Yes.', {
+    customerQuestion: 'Do you offer refunds?'
+  })
+  assert.equal(genericRefund.answersQuestion, false)
+  assert.equal(genericRefund.isUseful, false)
+
+  const vagueRefundConfirmation = classifyFacebookReply('Yes, we offer refunds.', {
+    customerQuestion: 'Do you offer refunds?'
+  })
+  assert.equal(vagueRefundConfirmation.answersQuestion, false)
+  assert.equal(vagueRefundConfirmation.isUseful, false)
 })

@@ -52,7 +52,14 @@ async function waitForResult(store, auditId, timeoutMs = 20000) {
 
 function linuxBrowserAvailable() {
   if (process.platform !== 'linux') return true
-  const candidates = [process.env.FACEBOOK_AUDIT_EXECUTABLE_PATH, 'google-chrome', 'chromium', 'chromium-browser'].filter(Boolean)
+  const executablePath = process.env.FACEBOOK_AUDIT_EXECUTABLE_PATH
+  const channel = process.env.FACEBOOK_AUDIT_BROWSER_CHANNEL || 'chrome'
+  const channelCandidates = channel === 'chromium'
+    ? ['chromium', 'chromium-browser']
+    : channel.startsWith('chrome')
+      ? ['google-chrome', 'google-chrome-stable']
+      : [channel]
+  const candidates = [executablePath, ...channelCandidates].filter(Boolean)
   return candidates.some(candidate => {
     try {
       execFileSync('which', [candidate], { stdio: 'ignore' })
@@ -125,6 +132,7 @@ async function main() {
     browser = configureFixtureBrowser(new FacebookMessengerBrowser({
       profileDirectory: path.join(temp, 'browser-profile'),
       channel: process.env.FACEBOOK_AUDIT_BROWSER_CHANNEL || 'chrome',
+      executablePath: process.env.FACEBOOK_AUDIT_EXECUTABLE_PATH || '',
       headless: true,
       pollIntervalMs: 100
     }), fixture)

@@ -18,18 +18,42 @@ function selectNewConversationEntries({ baseline, current, sentMessage, auditId,
   return found
 }
 
+function normalizedFacebookPath(url) {
+  const path = url.pathname.replace(/\/+$/, '').toLowerCase()
+  return path || '/'
+}
+
+function sameFacebookPageTarget(submitted, navigated) {
+  let target
+  try {
+    target = new URL(submitted)
+    if (!(navigated instanceof URL)) navigated = new URL(navigated)
+  } catch {
+    return false
+  }
+  if (normalizedFacebookPath(target) === '/profile.php') {
+    return normalizedFacebookPath(navigated) === '/profile.php' &&
+      target.searchParams.get('id') === navigated.searchParams.get('id')
+  }
+  return normalizedFacebookPath(target) === normalizedFacebookPath(navigated)
+}
+
 class FacebookMessengerBrowser {
   constructor({
     profileDirectory,
     channel = 'chrome',
+    executablePath = process.env.FACEBOOK_AUDIT_EXECUTABLE_PATH || '',
     headless = false,
     navigationTimeoutMs = 30000,
     pollIntervalMs = 350,
-    now = () => new Date()
+    now = () => new Date(),
+    browserType = chromium
   } = {}) {
     if (!profileDirectory) throw new Error('FACEBOOK_AUDIT_PROFILE_DIR is required')
     this.profileDirectory = profileDirectory
     this.channel = channel
+    this.executablePath = String(executablePath || '').trim()
+    this.browserType = browserType
     this.headless = headless
     this.navigationTimeoutMs = navigationTimeoutMs
     this.pollIntervalMs = pollIntervalMs
@@ -45,12 +69,14 @@ class FacebookMessengerBrowser {
   async launch() {
     if (this.context) return this.context
     try {
-      this.context = await chromium.launchPersistentContext(this.profileDirectory, {
-        channel: this.channel,
+      const launchOptions = {
         headless: this.headless,
         viewport: this.headless ? { width: 1440, height: 960 } : null,
         locale: 'en-US'
-      })
+      }
+      if (this.executablePath) launchOptions.executablePath = this.executablePath
+      else if (this.channel) launchOptions.channel = this.channel
+      this.context = await this.browserType.launchPersistentContext(this.profileDirectory, launchOptions)
     } catch {
       throw Object.assign(new Error('Dedicated audit browser could not start. Confirm it is installed and the audit profile is not open elsewhere.'), {
         code: 'browser_launch_failed',
@@ -96,6 +122,9 @@ class FacebookMessengerBrowser {
     const loginUrl = /\/(login|checkpoint)(?:\/|\?|$)/i.test(navigatedUrl.pathname)
     const loginField = await this.page.locator('input[name="email"], input[name="pass"]').first().isVisible().catch(() => false)
     if (loginUrl || loginField) return { loggedIn: false, dedicatedProfileSelected: true, reason: 'facebook_login_required' }
+    if (!sameFacebookPageTarget(audit.pageUrl, navigatedUrl)) {
+      return { loggedIn: false, dedicatedProfileSelected: true, reason: 'facebook_page_identity_unverified' }
+    }
 
     const sessionPage = await context.newPage()
     let authenticatedSession = false
@@ -195,14 +224,32 @@ class FacebookMessengerBrowser {
     }
 
     if (!this.composer) return { reachable: false }
-    this.baselineEntries = new Set((await this._collectEntries()).map(normalizeEntry))
+    if (!await this._captureStableBaseline()) return { reachable: false, reason: 'conversation_baseline_unstable' }
     return { reachable: true }
+  }
+
+  async _captureStableBaseline() {
+    let previous = null
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const current = new Set((await this._collectEntries()).map(normalizeEntry))
+      if (previous && current.size === previous.size && [...current].every(entry => previous.has(entry))) {
+        this.baselineEntries = current
+        return true
+      }
+      previous = current
+      await this.page.waitForTimeout(250)
+    }
+    this.baselineEntries = previous || new Set()
+    return false
   }
 
   async sendMessage(message, { auditId } = {}) {
     if (!this.composer) throw Object.assign(new Error('Messenger composer is not ready'), { code: 'messenger_composer_missing' })
     this.sentMessage = String(message)
     this.auditId = auditId || this.auditId
+    if (!await this._captureStableBaseline()) {
+      throw Object.assign(new Error('The Messenger conversation did not reach a stable baseline'), { code: 'conversation_baseline_unstable' })
+    }
     await this.composer.fill(this.sentMessage)
     await this.composer.press('Enter')
     const verificationDeadline = Date.now() + 6000
@@ -264,4 +311,4 @@ class FacebookMessengerBrowser {
   }
 }
 
-module.exports = { FacebookMessengerBrowser, normalizeEntry, selectNewConversationEntries }
+module.exports = { FacebookMessengerBrowser, normalizeEntry, sameFacebookPageTarget, selectNewConversationEntries }

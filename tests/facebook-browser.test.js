@@ -111,6 +111,24 @@ test('openPage fails closed when the navigated host is not Facebook', async () =
   assert.equal(missingLoginEvidence.loggedIn, false)
 })
 
+test('openPage fails closed when Facebook redirects to a different Page', async () => {
+  const page = {
+    async goto() {},
+    url: () => 'https://www.facebook.com/another-page',
+    locator: () => ({
+      first() { return this },
+      async isVisible() { return false }
+    })
+  }
+  const browser = new FacebookMessengerBrowser({ profileDirectory: 'test-profile' })
+  browser.launch = async () => ({ pages: () => [page], newPage: async () => page })
+
+  const result = await browser.openPage({ auditId: 'FBA-ABCDEF12', pageUrl: 'https://www.facebook.com/example' })
+
+  assert.equal(result.loggedIn, false)
+  assert.equal(result.reason, 'facebook_page_identity_unverified')
+})
+
 test('openPage requires positive session evidence beyond a non-root Facebook URL', async () => {
   let actualUrl = 'https://www.facebook.com/example'
   let hasSessionEvidence = false
@@ -134,6 +152,61 @@ test('openPage requires positive session evidence beyond a non-root Facebook URL
   const withEvidence = await browser.openPage({ auditId: 'FBA-ABCDEF12', pageUrl: 'https://www.facebook.com/example' })
   assert.equal(withEvidence.loggedIn, true)
   assert.equal(withEvidence.dedicatedProfileSelected, true)
+})
+
+test('sendMessage stabilizes the conversation baseline before sending', async () => {
+  let reads = 0
+  const browser = new FacebookMessengerBrowser({ profileDirectory: 'test-profile' })
+  browser.auditId = 'FBA-ABCDEF12'
+  browser.composer = {
+    async fill() {},
+    async press() {}
+  }
+  browser.page = { waitForTimeout: async () => {} }
+  browser._collectEntries = async () => {
+    reads += 1
+    if (reads < 3) return reads === 1 ? ['Conversation ready'] : ['Conversation ready', 'Late loaded history']
+    if (reads === 3) return ['Conversation ready', 'Late loaded history']
+    return ['Conversation ready', 'Late loaded history', 'Audit ID: FBA-ABCDEF12']
+  }
+
+  await browser.sendMessage('Audit question', { auditId: 'FBA-ABCDEF12' })
+
+  assert.equal(browser.baselineEntries.has('Late loaded history'), true)
+  assert.deepEqual(selectNewConversationEntries({
+    baseline: browser.baselineEntries,
+    current: ['Late loaded history', 'A new customer reply'],
+    sentMessage: 'Audit question',
+    auditId: 'FBA-ABCDEF12',
+    seen: new Set()
+  }), ['A new customer reply'])
+})
+
+test('launch uses a configured executable instead of an incompatible browser channel', async () => {
+  let launchDirectory
+  let launchOptions
+  const context = {
+    setDefaultTimeout() {},
+    setDefaultNavigationTimeout() {}
+  }
+  const browser = new FacebookMessengerBrowser({
+    profileDirectory: 'test-profile',
+    channel: 'chrome',
+    executablePath: '/opt/chromium/chrome',
+    browserType: {
+      async launchPersistentContext(directory, options) {
+        launchDirectory = directory
+        launchOptions = options
+        return context
+      }
+    }
+  })
+
+  await browser.launch()
+
+  assert.equal(launchDirectory, 'test-profile')
+  assert.equal(launchOptions.executablePath, '/opt/chromium/chrome')
+  assert.equal('channel' in launchOptions, false)
 })
 
 test('selectNewConversationEntries ignores baseline and the worker message without losing new replies', () => {
