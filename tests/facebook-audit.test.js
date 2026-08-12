@@ -37,6 +37,13 @@ test('buildAuditRequest rejects a non-Facebook URL and an unauthorized test', ()
   }), /authorization/)
 })
 
+test('Facebook Page URLs reject embedded credentials', () => {
+  assert.throws(
+    () => normalizeFacebookPageUrl('https://alice:secret@www.facebook.com/examplebusiness'),
+    /cannot contain credentials/
+  )
+})
+
 test('Facebook profile.php Page URLs preserve their numeric Page ID', () => {
   assert.equal(
     normalizeFacebookPageUrl('https://www.facebook.com/profile.php?id=61574382802393&utm_source=test'),
@@ -139,6 +146,18 @@ test('classifyFacebookReply rejects generic acknowledgements and identifies usef
   })
   assert.equal(generic.answersQuestion, false)
   assert.equal(generic.isUseful, false)
+
+  const genericFiller = classifyFacebookReply('Yes, we can help.', {
+    customerQuestion: 'Do you have availability this week and what does it cost?'
+  })
+  assert.equal(genericFiller.answersQuestion, false)
+  assert.equal(genericFiller.isUseful, false)
+
+  const echoedOffer = classifyFacebookReply('Yes, we offer private events.', {
+    customerQuestion: 'Do you offer private events?'
+  })
+  assert.equal(echoedOffer.answersQuestion, false)
+  assert.equal(echoedOffer.isUseful, false)
 
   const partial = classifyFacebookReply('Yes, we have a table Friday at 7pm.', {
     customerQuestion: 'Do you have availability this week and what does it cost?'

@@ -211,27 +211,37 @@ class FacebookMessengerBrowser {
   }
 
   async _collectEntries(page = this.page) {
-    return page.locator('[data-audit-message], [role="main"] [role="row"], [aria-label*="Messages" i] [role="row"]').evaluateAll(nodes => {
-      const unique = new Map()
-      for (const node of nodes) {
-        const text = String(node.innerText || node.textContent || '').replace(/\s+/g, ' ').trim()
-        if (!text) continue
-        const id = node.getAttribute('data-audit-message-id') || node.getAttribute('data-message-id') || node.getAttribute('data-id') || node.id || ''
-        const timestampNode = node.matches('time[datetime], [data-timestamp], [data-utime]')
-          ? node
-          : node.querySelector('time[datetime], [data-timestamp], [data-utime]')
-        const rawTimestamp = node.getAttribute('data-audit-timestamp') ||
-          node.getAttribute('data-timestamp') ||
-          node.getAttribute('data-utime') ||
-          timestampNode?.getAttribute('datetime') || ''
-        let timestampMs = Number(rawTimestamp)
-        if (!Number.isFinite(timestampMs)) timestampMs = Date.parse(rawTimestamp)
-        if (Number.isFinite(timestampMs) && timestampMs < 100000000000) timestampMs *= 1000
-        const key = id || `${text}:${timestampMs}`
-        if (!unique.has(key)) unique.set(key, { text, id, timestampMs: Number.isFinite(timestampMs) ? timestampMs : null })
-      }
-      return [...unique.values()]
-    }).catch(() => [])
+    try {
+      return await page.locator('[data-audit-message], [role="main"] [role="row"], [aria-label*="Messages" i] [role="row"]').evaluateAll(nodes => {
+        const unique = new Map()
+        for (const node of nodes) {
+          const text = String(node.innerText || node.textContent || '').replace(/\s+/g, ' ').trim()
+          if (!text) continue
+          const id = node.getAttribute('data-audit-message-id') || node.getAttribute('data-message-id') || node.getAttribute('data-id') || node.id || ''
+          const timestampNode = node.matches('time[datetime], [data-timestamp], [data-utime]')
+            ? node
+            : node.querySelector('time[datetime], [data-timestamp], [data-utime]')
+          const rawTimestamp = node.getAttribute('data-audit-timestamp') ||
+            node.getAttribute('data-timestamp') ||
+            node.getAttribute('data-utime') ||
+            timestampNode?.getAttribute('datetime') || ''
+          let timestampMs = null
+          if (String(rawTimestamp).trim()) {
+            timestampMs = Number(rawTimestamp)
+            if (!Number.isFinite(timestampMs)) timestampMs = Date.parse(rawTimestamp)
+            if (Number.isFinite(timestampMs) && timestampMs < 100000000000) timestampMs *= 1000
+          }
+          const key = id || `${text}:${timestampMs}`
+          if (!unique.has(key)) unique.set(key, { text, id, timestampMs: Number.isFinite(timestampMs) ? timestampMs : null })
+        }
+        return [...unique.values()]
+      })
+    } catch (error) {
+      throw Object.assign(new Error('The Messenger conversation could not be read'), {
+        code: 'conversation_collection_failed',
+        cause: error
+      })
+    }
   }
 
   async openMessenger() {

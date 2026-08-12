@@ -114,6 +114,7 @@ test('openPage fails closed when the navigated host is not Facebook', async () =
 test('openPage fails closed when Facebook redirects to a different Page', async () => {
   const page = {
     async goto() {},
+    async waitForTimeout() {},
     url: () => 'https://www.facebook.com/another-page',
     locator: () => ({
       first() { return this },
@@ -134,8 +135,11 @@ test('openPage requires positive session evidence beyond a non-root Facebook URL
   let hasSessionEvidence = false
   const page = {
     async goto(url) {
-      if (String(url).endsWith('/me')) actualUrl = 'https://www.facebook.com/profile.php?id=123'
+      actualUrl = String(url).endsWith('/me')
+        ? 'https://www.facebook.com/profile.php?id=123'
+        : 'https://www.facebook.com/example'
     },
+    async waitForTimeout() {},
     url: () => actualUrl,
     locator: selector => ({
       first() { return this },
@@ -238,6 +242,34 @@ test('launch uses a configured executable instead of an incompatible browser cha
   assert.equal(launchDirectory, 'test-profile')
   assert.equal(launchOptions.executablePath, '/opt/chromium/chrome')
   assert.equal('channel' in launchOptions, false)
+})
+
+test('_collectEntries preserves missing timestamps and propagates collection failures', async () => {
+  const node = {
+    innerText: 'Unverifiable reply',
+    textContent: 'Unverifiable reply',
+    getAttribute(name) {
+      return name === 'data-message-id' ? 'reply-1' : null
+    },
+    matches() { return false },
+    querySelector() { return null }
+  }
+  const browser = new FacebookMessengerBrowser({ profileDirectory: 'test-profile' })
+  const page = { locator: () => ({ evaluateAll: async callback => callback([node]) }) }
+
+  const entries = await browser._collectEntries(page)
+  assert.deepEqual(entries, [{ text: 'Unverifiable reply', id: 'reply-1', timestampMs: null }])
+  assert.throws(() => selectNewConversationEntries({
+    baseline: new Set(),
+    current: entries,
+    sentMessage: 'Audit question',
+    auditId: 'FBA-ABCDEF12',
+    seen: new Set(),
+    minTimestampMs: 1000
+  }), /reliable post-send evidence/)
+
+  const brokenPage = { locator: () => ({ evaluateAll: async () => { throw new Error('detached') } }) }
+  await assert.rejects(browser._collectEntries(brokenPage), error => error.code === 'conversation_collection_failed')
 })
 
 test('selectNewConversationEntries fails closed without post-send timestamps', () => {
