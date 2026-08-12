@@ -166,3 +166,23 @@ test('classifyFacebookReply rejects generic acknowledgements and identifies usef
   })
   assert.equal(cancellationBookingRedirect.isUseful, false)
 })
+
+test('classifyFacebookReply rejects echoed cancellation policy phrases without useful details', () => {
+  const echoedRefund = classifyFacebookReply('Our refund policy is to book now through our calendar.', {
+    customerQuestion: 'What is your refund policy?'
+  })
+  assert.equal(echoedRefund.answersQuestion, false)
+  assert.equal(echoedRefund.isUseful, false)
+
+  const usefulRefund = classifyFacebookReply('Refunds are available within 7 days of purchase.', {
+    customerQuestion: 'What is your refund policy?'
+  })
+  assert.equal(usefulRefund.answersQuestion, true)
+  assert.equal(usefulRefund.isUseful, true)
+
+  const vagueRefund = classifyFacebookReply('We are available to answer your refund questions.', {
+    customerQuestion: 'What is your refund policy?'
+  })
+  assert.equal(vagueRefund.answersQuestion, false)
+  assert.equal(vagueRefund.isUseful, false)
+})
