@@ -95,8 +95,26 @@ class FacebookMessengerBrowser {
     }
     const loginUrl = /\/(login|checkpoint)(?:\/|\?|$)/i.test(navigatedUrl.pathname)
     const loginField = await this.page.locator('input[name="email"], input[name="pass"]').first().isVisible().catch(() => false)
-    const accountEvidence = await this.page.locator('[aria-label*="your profile" i], [aria-label*="account" i], a[href*="/me"], [data-pagelet="ProfileActions"]').first().isVisible().catch(() => false)
-    return { loggedIn: !(loginUrl || loginField) && accountEvidence, dedicatedProfileSelected: true }
+    if (loginUrl || loginField) return { loggedIn: false, dedicatedProfileSelected: true, reason: 'facebook_login_required' }
+
+    const sessionPage = await context.newPage()
+    let authenticatedSession = false
+    try {
+      await sessionPage.goto('https://www.facebook.com/me', { waitUntil: 'domcontentloaded' })
+      const sessionUrl = new URL(sessionPage.url())
+      const sessionLoginUrl = /\/(login|checkpoint)(?:\/|\?|$)/i.test(sessionUrl.pathname)
+      const sessionLoginField = await sessionPage.locator('input[name="email"], input[name="pass"]').first().isVisible().catch(() => false)
+      authenticatedSession = sessionUrl.protocol === 'https:' &&
+        acceptedHosts.has(sessionUrl.hostname.toLowerCase()) &&
+        sessionUrl.pathname !== '/' &&
+        !sessionLoginUrl &&
+        !sessionLoginField
+    } catch {
+      authenticatedSession = false
+    } finally {
+      await Promise.resolve(sessionPage.close?.()).catch(() => {})
+    }
+    return { loggedIn: authenticatedSession, dedicatedProfileSelected: true }
   }
 
   async _findComposer(page = this.page) {

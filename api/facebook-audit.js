@@ -71,7 +71,18 @@ function requestOriginAllowed(req) {
 }
 
 function clientKey(req) {
-  return String(req.socket?.remoteAddress || req.ip || 'unknown')
+  return String(req.socket?.remoteAddress || 'unknown')
+}
+
+function storeRateLimiter(store) {
+  if (typeof store.consumeRateLimit !== 'function') return defaultPostRateLimiter
+  return {
+    check: key => store.consumeRateLimit({
+      key,
+      limit: DEFAULT_POST_LIMIT,
+      windowMs: DEFAULT_POST_WINDOW_MS
+    })
+  }
 }
 
 function requestTooLarge(body) {
@@ -135,19 +146,25 @@ function single(value) {
   return Array.isArray(value) ? value[0] : value
 }
 
-function createHandler({ store, notifyTelegram: notify = notifyTelegram, rateLimiter = defaultPostRateLimiter } = {}) {
+function createHandler({ store, notifyTelegram: notify = notifyTelegram, rateLimiter } = {}) {
   return async function handler(req, res) {
     if (!requestOriginAllowed(req)) return json(res, 403, { error: 'Cross-origin audit requests are not allowed' })
     if (req.method === 'OPTIONS') return json(res, 204, {})
+    const auditStore = store || getDefaultStore()
     if (req.method === 'POST') {
-      const decision = rateLimiter.check(clientKey(req))
+      let decision
+      try {
+        decision = await Promise.resolve((rateLimiter || storeRateLimiter(auditStore)).check(clientKey(req)))
+      } catch (error) {
+        console.error('Facebook audit rate limiter failed', { code: error.code || error.name })
+        return json(res, 503, { error: 'The audit service is temporarily unavailable.' })
+      }
       if (!decision.allowed) {
         res.setHeader('Retry-After', String(decision.retryAfterSeconds))
         return json(res, 429, { error: 'Too many audit requests. Please try again later.' })
       }
       if (requestTooLarge(req.body)) return json(res, 413, { error: 'Audit request is too large' })
     }
-    const auditStore = store || getDefaultStore()
 
     if (req.method === 'GET') {
       const auditId = String(single(req.query?.auditId) || '').trim()

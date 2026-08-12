@@ -43,7 +43,7 @@ The browser profile defaults to the git-ignored `data/facebook-audit-browser-pro
 
 2. In the existing Vercel project, create one **private Vercel Blob** store and connect it to the project. Add its read-write token as `BLOB_READ_WRITE_TOKEN` in Vercel and in the worker's uncommitted `.env.local`.
 
-3. Copy `.env.example` to an uncommitted `.env.local` and fill the environment values. Keep the existing Telegram token and chat ID; do not create or rotate them.
+3. Create an uncommitted `.env.local` with `BLOB_READ_WRITE_TOKEN`, `TELEGRAM_BOT_TOKEN`, and `TELEGRAM_CHAT_ID`. Optionally set `FACEBOOK_AUDIT_PROFILE_DIR`, `FACEBOOK_AUDIT_BROWSER_CHANNEL`, and `FACEBOOK_AUDIT_ALLOWED_ORIGIN`. Keep the existing Telegram token and chat ID; do not create or rotate them.
 
 4. `FACEBOOK_AUDIT_PROFILE_DIR` is optional. When omitted, the worker uses its dedicated git-ignored profile under `data/`. Never point it at Jonny's everyday Facebook browser profile.
 

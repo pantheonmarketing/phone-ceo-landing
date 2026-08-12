@@ -34,7 +34,9 @@ test('sendMessage timestamps only after conversation verification', async () => 
 test('openPage fails closed when the navigated host is not Facebook', async () => {
   let actualUrl = 'https://example.com/example'
   const page = {
-    async goto() {},
+    async goto(url) {
+      if (String(url).endsWith('/me')) actualUrl = 'https://www.facebook.com/login/?next=%2Fme'
+    },
     async waitForTimeout() {},
     url: () => actualUrl,
     locator: () => ({
@@ -53,6 +55,27 @@ test('openPage fails closed when the navigated host is not Facebook', async () =
   actualUrl = 'https://fb.com/example'
   const missingLoginEvidence = await browser.openPage({ auditId: 'FBA-ABCDEF12', pageUrl: 'https://fb.com/example' })
   assert.equal(missingLoginEvidence.loggedIn, false)
+})
+
+test('openPage requires the Facebook /me session check rather than public profile markup', async () => {
+  let actualUrl = 'https://www.facebook.com/example'
+  const page = {
+    async goto(url) {
+      if (String(url).endsWith('/me')) actualUrl = 'https://www.facebook.com/profile.php?id=123'
+    },
+    url: () => actualUrl,
+    locator: () => ({
+      first() { return this },
+      async isVisible() { return false }
+    })
+  }
+  const browser = new FacebookMessengerBrowser({ profileDirectory: 'test-profile' })
+  browser.launch = async () => ({ pages: () => [page], newPage: async () => page })
+
+  const result = await browser.openPage({ auditId: 'FBA-ABCDEF12', pageUrl: 'https://www.facebook.com/example' })
+
+  assert.equal(result.loggedIn, true)
+  assert.equal(result.dedicatedProfileSelected, true)
 })
 
 test('selectNewConversationEntries ignores baseline and the worker message without losing new replies', () => {

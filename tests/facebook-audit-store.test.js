@@ -3,11 +3,12 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs/promises')
 const os = require('node:os')
 const path = require('node:path')
+const { Readable } = require('node:stream')
 
 const { buildAuditRequest, createReportToken, hashReportToken } = require('../lib/facebook-audit')
 const { createAuditRecord } = require('../lib/facebook-audit-state')
 const { FileAuditStore, MemoryAuditStore } = require('../lib/facebook-audit-store')
-const { normalizeBlobEtag } = require('../lib/vercel-blob-audit-store')
+const { normalizeBlobEtag, VercelBlobAuditStore } = require('../lib/vercel-blob-audit-store')
 
 function makeRecord(name, now) {
   const request = buildAuditRequest({
@@ -67,4 +68,33 @@ test('FileAuditStore persists queue records across store instances', async t => 
 test('Vercel Blob weak read ETags are normalized for conditional writes', () => {
   assert.equal(normalizeBlobEtag('W/"abc123"'), '"abc123"')
   assert.equal(normalizeBlobEtag('"abc123"'), '"abc123"')
+})
+
+test('Vercel Blob rate limiting is shared and bounded to one conditional record', async () => {
+  let value = null
+  let etag = 0
+  const blob = {
+    async get() {
+      if (!value) return null
+      return {
+        statusCode: 200,
+        stream: Readable.from([value]),
+        blob: { etag: `"${etag}"` }
+      }
+    },
+    async put(pathname, body, options) {
+      assert.equal(pathname, 'facebook-audits/rate-limit/public-posts.json')
+      if (value && options.ifMatch !== `"${etag}"`) throw Object.assign(new Error('precondition failed'), { status: 412 })
+      if (!value && options.allowOverwrite) throw Object.assign(new Error('already exists'), { status: 409 })
+      value = body
+      etag += 1
+    }
+  }
+  const store = new VercelBlobAuditStore({ token: 'test', blob })
+
+  assert.equal((await store.consumeRateLimit({ limit: 2, windowMs: 60000, key: 'first' })).allowed, true)
+  assert.equal((await store.consumeRateLimit({ limit: 2, windowMs: 60000, key: 'second' })).allowed, true)
+  const blocked = await store.consumeRateLimit({ limit: 2, windowMs: 60000, key: 'rotated-client' })
+  assert.equal(blocked.allowed, false)
+  assert.equal(etag, 2)
 })

@@ -61,6 +61,23 @@ test('rate limiter stays bounded and does not trust forwarded client headers', (
   assert.equal(limiter.size(), 2)
 })
 
+test('facebook audit handler uses the durable store limiter when available', async () => {
+  const store = new MemoryAuditStore()
+  let checks = 0
+  store.consumeRateLimit = async () => {
+    checks += 1
+    return checks === 1 ? { allowed: true, remaining: 4 } : { allowed: false, retryAfterSeconds: 600 }
+  }
+  const handler = createHandler({ store, notifyTelegram: async () => {} })
+  const first = makeResponse()
+  await handler({ method: 'POST', socket: { remoteAddress: '10.0.0.1' }, body: { authorized: true, pageUrl: 'https://facebook.com/shared-limit' } }, first)
+  assert.equal(first.statusCode, 200)
+  const second = makeResponse()
+  await handler({ method: 'POST', socket: { remoteAddress: '10.0.0.2' }, body: { authorized: true, pageUrl: 'https://facebook.com/shared-limit' } }, second)
+  assert.equal(second.statusCode, 429)
+  assert.equal(checks, 2)
+})
+
 test('facebook audit endpoint rejects cross-origin requests and rate-limits POSTs', async () => {
   const store = new MemoryAuditStore()
   const handler = createHandler({
