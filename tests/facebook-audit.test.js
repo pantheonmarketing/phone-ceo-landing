@@ -85,7 +85,8 @@ test('scoreFacebookAudit gives a B when the exact response time exceeds one minu
 
   assert.equal(result.grade, 'B')
   assert.equal(result.passed, true)
-  assert.equal(result.responseSeconds, 60)
+  assert.equal(result.responseSeconds, 61)
+  assert.equal(result.label, 'Useful answer in 61 seconds')
 
   const later = scoreFacebookAudit({ sentAtMs: 0, usefulReplyAtMs: 119500 }, 120000)
   assert.equal(later.grade, 'B')
@@ -132,6 +133,12 @@ test('classifyFacebookReply rejects generic acknowledgements and identifies usef
   })
   assert.equal(auto.isAutoAcknowledgement, true)
   assert.equal(auto.isUseful, false)
+
+  const generic = classifyFacebookReply('Yes.', {
+    customerQuestion: 'Do you have availability this week and what does it cost?'
+  })
+  assert.equal(generic.answersQuestion, false)
+  assert.equal(generic.isUseful, false)
 
   const partial = classifyFacebookReply('Yes, we have a table Friday at 7pm.', {
     customerQuestion: 'Do you have availability this week and what does it cost?'
