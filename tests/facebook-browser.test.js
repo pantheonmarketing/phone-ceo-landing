@@ -34,7 +34,11 @@ test('controlled smoke routes both Facebook hosts through the fixture', async ()
       routes.push({ pattern, handler })
     }
   }
-  const fixture = { html: () => '<fixture>', recordSend: () => { sent += 1 } }
+  const fixture = {
+    html: () => '<fixture>',
+    sessionHtml: () => '<authenticated-session-fixture>',
+    recordSend: () => { sent += 1 }
+  }
 
   await installFixtureRoutes(context, fixture)
 
@@ -54,7 +58,7 @@ test('controlled smoke routes both Facebook hosts through the fixture', async ()
     request: () => ({ url: () => 'https://www.facebook.com/me' }),
     fulfill: async response => { pageResponse = response }
   })
-  assert.deepEqual(pageResponse, { status: 200, contentType: 'text/html; charset=utf-8', body: '<fixture>' })
+  assert.deepEqual(pageResponse, { status: 200, contentType: 'text/html; charset=utf-8', body: '<authenticated-session-fixture>' })
 })
 
 test('sendMessage timestamps only after conversation verification', async () => {
@@ -111,25 +115,29 @@ test('openPage fails closed when the navigated host is not Facebook', async () =
   assert.equal(missingLoginEvidence.loggedIn, false)
 })
 
-test('openPage requires the Facebook /me session check rather than public profile markup', async () => {
+test('openPage requires positive session evidence beyond a non-root Facebook URL', async () => {
   let actualUrl = 'https://www.facebook.com/example'
+  let hasSessionEvidence = false
   const page = {
     async goto(url) {
       if (String(url).endsWith('/me')) actualUrl = 'https://www.facebook.com/profile.php?id=123'
     },
     url: () => actualUrl,
-    locator: () => ({
+    locator: selector => ({
       first() { return this },
-      async isVisible() { return false }
+      async isVisible() { return hasSessionEvidence && String(selector).includes('logout') }
     })
   }
   const browser = new FacebookMessengerBrowser({ profileDirectory: 'test-profile' })
   browser.launch = async () => ({ pages: () => [page], newPage: async () => page })
 
-  const result = await browser.openPage({ auditId: 'FBA-ABCDEF12', pageUrl: 'https://www.facebook.com/example' })
+  const withoutEvidence = await browser.openPage({ auditId: 'FBA-ABCDEF12', pageUrl: 'https://www.facebook.com/example' })
+  assert.equal(withoutEvidence.loggedIn, false)
 
-  assert.equal(result.loggedIn, true)
-  assert.equal(result.dedicatedProfileSelected, true)
+  hasSessionEvidence = true
+  const withEvidence = await browser.openPage({ auditId: 'FBA-ABCDEF12', pageUrl: 'https://www.facebook.com/example' })
+  assert.equal(withEvidence.loggedIn, true)
+  assert.equal(withEvidence.dedicatedProfileSelected, true)
 })
 
 test('selectNewConversationEntries ignores baseline and the worker message without losing new replies', () => {

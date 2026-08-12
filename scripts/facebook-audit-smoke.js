@@ -33,6 +33,7 @@ async function startFixture() {
   return {
     url: `http://127.0.0.1:${address.port}/facebook-page`,
     html: () => html,
+    sessionHtml: () => `${html}<a href="/logout">Log out</a>`,
     recordSend: () => { sends += 1 },
     sends: () => sends,
     stop: () => new Promise(resolve => server.close(resolve))
@@ -77,7 +78,10 @@ function createFixtureRouteHandler(fixture) {
       fixture.recordSend()
       return route.fulfill({ status: 204, body: '' })
     }
-    return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: fixture.html() })
+    const body = new URL(route.request().url()).pathname === '/me' && fixture.sessionHtml
+      ? fixture.sessionHtml()
+      : fixture.html()
+    return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body })
   }
 }
 

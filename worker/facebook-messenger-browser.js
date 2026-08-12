@@ -104,17 +104,32 @@ class FacebookMessengerBrowser {
       const sessionUrl = new URL(sessionPage.url())
       const sessionLoginUrl = /\/(login|checkpoint)(?:\/|\?|$)/i.test(sessionUrl.pathname)
       const sessionLoginField = await sessionPage.locator('input[name="email"], input[name="pass"]').first().isVisible().catch(() => false)
+      const sessionEvidence = await this._hasAuthenticatedSessionEvidence(sessionPage)
       authenticatedSession = sessionUrl.protocol === 'https:' &&
         acceptedHosts.has(sessionUrl.hostname.toLowerCase()) &&
         sessionUrl.pathname !== '/' &&
         !sessionLoginUrl &&
-        !sessionLoginField
+        !sessionLoginField &&
+        sessionEvidence
     } catch {
       authenticatedSession = false
     } finally {
       await Promise.resolve(sessionPage.close?.()).catch(() => {})
     }
     return { loggedIn: authenticatedSession, dedicatedProfileSelected: true }
+  }
+
+  async _hasAuthenticatedSessionEvidence(page) {
+    const selectors = [
+      'a[href*="/logout"]',
+      'form[action*="/logout"]',
+      '[aria-label*="log out" i]',
+      '[data-testid*="logout" i]'
+    ]
+    for (const selector of selectors) {
+      if (await page.locator(selector).first().isVisible().catch(() => false)) return true
+    }
+    return false
   }
 
   async _findComposer(page = this.page) {

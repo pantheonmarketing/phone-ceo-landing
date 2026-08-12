@@ -129,6 +129,12 @@ test('classifyFacebookReply rejects generic acknowledgements and identifies usef
   assert.equal(auto.isAutoAcknowledgement, true)
   assert.equal(auto.isUseful, false)
 
+  const partial = classifyFacebookReply('Yes, we have a table Friday at 7pm.', {
+    customerQuestion: 'Do you have availability this week and what does it cost?'
+  })
+  assert.equal(partial.isUseful, false)
+  assert.equal(partial.answersQuestion, false)
+
   const useful = classifyFacebookReply('Yes, we have a table Friday at 7pm. It is $65 per person. Would you like me to reserve it?', {
     customerQuestion: 'Do you have availability this week and what does it cost?'
   })
