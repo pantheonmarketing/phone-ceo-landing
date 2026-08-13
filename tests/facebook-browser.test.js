@@ -301,6 +301,24 @@ test('openPage requires positive session evidence beyond a non-root Facebook URL
   assert.equal(withEvidence.dedicatedProfileSelected, true)
 })
 
+test('session evidence accepts owner-only controls on the authenticated /me profile', async () => {
+  const page = {
+    locator: () => ({
+      first() { return this },
+      async isVisible() { return false }
+    }),
+    getByRole: (role, options) => ({
+      first() { return this },
+      async isVisible() {
+        return role === 'button' && options.name.test('Edit profile')
+      }
+    })
+  }
+  const browser = new FacebookMessengerBrowser({ profileDirectory: 'test-profile' })
+
+  assert.equal(await browser._hasAuthenticatedSessionEvidence(page), true)
+})
+
 test('sendMessage stabilizes the conversation baseline before sending', async () => {
   let reads = 0
   const browser = new FacebookMessengerBrowser({ profileDirectory: 'test-profile' })

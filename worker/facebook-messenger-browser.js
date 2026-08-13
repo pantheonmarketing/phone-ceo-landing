@@ -236,6 +236,16 @@ class FacebookMessengerBrowser {
     for (const selector of selectors) {
       if (await page.locator(selector).first().isVisible().catch(() => false)) return true
     }
+    if (typeof page.getByRole === 'function') {
+      const ownerControls = [
+        ['button', /^edit profile$/i],
+        ['link', /^edit profile$/i],
+        ['button', /^add to story$/i]
+      ]
+      for (const [role, name] of ownerControls) {
+        if (await page.getByRole(role, { name }).first().isVisible().catch(() => false)) return true
+      }
+    }
     return false
   }
 
