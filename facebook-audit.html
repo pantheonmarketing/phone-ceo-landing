@@ -3,60 +3,238 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f8f4">
   <title>Facebook Response Audit | EngbrainAI</title>
   <style>
-    :root { --ink:#f6f7fb; --muted:#b6bfd3; --panel:#11192c; --line:#2a3650; --orange:#ff6a3d; --green:#48d597; --red:#ff5c73; }
-    * { box-sizing:border-box; } body { margin:0; min-height:100vh; font-family:Inter,Arial,sans-serif; color:var(--ink); background:radial-gradient(circle at 15% 0,#29396a 0,transparent 34%),#080d19; }
-    main { width:min(920px,calc(100% - 32px)); margin:0 auto; padding:56px 0 70px; }
-    .eyebrow { color:#91a7e8; font-size:13px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; } h1 { max-width:760px; margin:15px 0 12px; font-size:clamp(38px,7vw,68px); line-height:.98; letter-spacing:-.055em; } .intro { max-width:690px; color:var(--muted); font-size:19px; line-height:1.55; }
-    .grid { display:grid; grid-template-columns:1.1fr .9fr; gap:22px; margin-top:36px; } .card { background:rgba(17,25,44,.93); border:1px solid var(--line); border-radius:22px; padding:28px; box-shadow:0 18px 55px rgba(0,0,0,.22); }
-    label { display:block; margin:18px 0 7px; font-weight:700; } input,textarea { width:100%; border:1px solid #394862; border-radius:11px; background:#0a1120; color:white; padding:14px; font:inherit; } textarea { min-height:104px; resize:vertical; } input:focus,textarea:focus { outline:2px solid #6e8fff; border-color:transparent; }
-    .consent { display:flex; gap:10px; align-items:flex-start; color:var(--muted); font-size:14px; line-height:1.45; margin:20px 0; } .consent input { width:19px; height:19px; margin-top:1px; }
-    button { width:100%; border:0; border-radius:11px; padding:16px; color:#180b04; background:var(--orange); font-size:16px; font-weight:900; cursor:pointer; } button:disabled { opacity:.55; cursor:wait; }
-    .steps { margin:0; padding:0; list-style:none; } .steps li { display:flex; gap:12px; padding:14px 0; color:var(--muted); border-bottom:1px solid var(--line); line-height:1.4; } .steps li:last-child { border:0; } .num { flex:0 0 28px; height:28px; padding-top:5px; border-radius:50%; text-align:center; background:#243353; color:#afc2ff; font-size:12px; font-weight:900; }
-    .deadline { margin-top:20px; padding:14px; border-radius:12px; border:1px solid #6a342b; background:#2d1718; color:#ffd0c5; font-weight:700; line-height:1.4; } .hidden { display:none; }
-    #result { margin-top:22px; border-color:#30674f; background:#0d241c; } #result h2 { color:var(--green); margin:0 0 8px; } #result p { margin:8px 0; color:#c5e3d5; line-height:1.45; } .error { color:#ffbac4; margin-top:12px; min-height:20px; } @media(max-width:760px){ main{padding-top:34px}.grid{grid-template-columns:1fr}.card{padding:22px} }
+    :root {
+      color-scheme:light;
+      --canvas:#f7f8f4;
+      --surface:#ffffff;
+      --surface-soft:#f1f4f8;
+      --ink:#101a2f;
+      --muted:#5e6878;
+      --blue:#315be8;
+      --orange:#ff6238;
+      --line:#dbe2ea;
+      --green:#12805c;
+      --red:#c53b4b;
+      --peach:#fff0e9;
+      --peach-ink:#9a371f;
+      --shadow:0 24px 70px -28px rgba(16,26,47,.28);
+    }
+
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body {
+      margin:0;
+      min-height:100vh;
+      color:var(--ink);
+      background:
+        radial-gradient(circle at 5% 8%,rgba(255,98,56,.08),transparent 28%),
+        radial-gradient(circle at 96% 88%,rgba(49,91,232,.07),transparent 30%),
+        var(--canvas);
+      font-family:Inter,Arial,sans-serif;
+      -webkit-font-smoothing:antialiased;
+    }
+
+    main { width:min(1100px,calc(100% - 40px)); margin:0 auto; padding:76px 0 82px; }
+    .hero { max-width:860px; margin:0 auto 50px; text-align:center; }
+    .eyebrow {
+      display:inline-flex;
+      align-items:center;
+      gap:9px;
+      margin:0 0 20px;
+      color:var(--blue);
+      font-size:13px;
+      font-weight:850;
+      letter-spacing:.15em;
+      text-transform:uppercase;
+    }
+    .eyebrow::before { content:""; width:8px; height:8px; border:3px solid currentColor; border-radius:50%; }
+    h1 { margin:0; font-size:clamp(43px,6.2vw,70px); line-height:1.02; letter-spacing:-.052em; font-weight:850; }
+    h1 span { color:var(--orange); }
+    .intro { max-width:680px; margin:23px auto 0; color:var(--muted); font-size:19px; line-height:1.62; }
+
+    .layout { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(300px,.8fr); gap:34px; align-items:start; }
+    .form-card {
+      padding:36px;
+      border:1px solid var(--line);
+      border-radius:28px;
+      background:var(--surface);
+      box-shadow:var(--shadow);
+    }
+    .field-row { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+    .field { margin-bottom:22px; }
+    label:not(.consent) { display:block; margin:0 0 8px; font-size:15px; font-weight:750; }
+    input,textarea {
+      width:100%;
+      border:1px solid var(--line);
+      border-radius:14px;
+      background:var(--surface);
+      color:var(--ink);
+      padding:15px 16px;
+      font:inherit;
+      font-size:16px;
+      transition:border-color .18s ease,box-shadow .18s ease,background .18s ease;
+    }
+    input::placeholder,textarea::placeholder { color:#99a3b2; }
+    input:hover,textarea:hover { border-color:#b9c4d2; }
+    input:focus,textarea:focus { outline:0; border-color:var(--blue); box-shadow:0 0 0 4px rgba(49,91,232,.12); }
+    textarea { min-height:120px; resize:vertical; }
+
+    .trust-strip { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:2px 0 22px; padding:15px 0; border-block:1px solid var(--surface-soft); }
+    .trust-item { display:flex; align-items:center; gap:7px; color:var(--muted); font-size:12px; font-weight:700; line-height:1.25; }
+    .trust-icon { display:grid; flex:0 0 19px; height:19px; place-items:center; border-radius:50%; background:#e8f6f0; color:var(--green); font-size:11px; font-weight:900; }
+    .trust-item:last-child .trust-icon { background:#fff0f1; color:var(--red); }
+
+    .consent { display:flex; gap:12px; align-items:flex-start; margin:0 0 20px; padding:16px; border:1px solid transparent; border-radius:14px; background:var(--surface-soft); color:var(--muted); font-size:14px; line-height:1.55; cursor:pointer; transition:border-color .18s ease,background .18s ease; }
+    .consent:hover { border-color:var(--line); background:#edf1f6; }
+    .consent input { flex:0 0 20px; width:20px; height:20px; margin:1px 0 0; padding:0; accent-color:var(--orange); }
+    .consent strong { color:var(--ink); }
+    button {
+      width:100%;
+      border:0;
+      border-radius:14px;
+      padding:18px 20px;
+      color:#fff;
+      background:var(--orange);
+      box-shadow:0 13px 28px -13px rgba(255,98,56,.72);
+      font:inherit;
+      font-size:17px;
+      font-weight:850;
+      cursor:pointer;
+      transition:transform .18s ease,box-shadow .18s ease,opacity .18s ease;
+    }
+    button:hover:not(:disabled) { transform:translateY(-2px); box-shadow:0 17px 34px -13px rgba(255,98,56,.8); }
+    button:active:not(:disabled) { transform:translateY(0); }
+    button:focus-visible { outline:3px solid rgba(49,91,232,.35); outline-offset:3px; }
+    button:disabled { opacity:.58; cursor:wait; }
+    .error { min-height:20px; margin-top:12px; color:var(--red); font-size:14px; font-weight:650; text-align:center; }
+
+    .method { display:grid; gap:14px; }
+    .method-title { margin:2px 0 6px; color:var(--blue); font-size:13px; font-weight:850; letter-spacing:.13em; text-transform:uppercase; }
+    .step { display:flex; gap:14px; padding:19px; border:1px solid var(--line); border-radius:20px; background:var(--surface); box-shadow:0 12px 34px -28px rgba(16,26,47,.5); transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease; }
+    .step:hover { transform:translateY(-2px); border-color:#b9c7ed; box-shadow:0 18px 38px -26px rgba(16,26,47,.45); }
+    .num { display:grid; flex:0 0 32px; height:32px; place-items:center; border-radius:50%; background:var(--surface-soft); color:var(--blue); font-size:13px; font-weight:850; }
+    .step h2 { margin:1px 0 5px; font-size:16px; letter-spacing:-.01em; }
+    .step p { margin:0; color:var(--muted); font-size:14px; line-height:1.45; }
+    .deadline { position:relative; overflow:hidden; margin-top:7px; padding:20px; border:1px solid #f1d3c5; border-radius:20px; background:var(--peach); color:var(--peach-ink); font-size:15px; font-weight:750; line-height:1.5; }
+    .deadline::after { content:""; position:absolute; width:90px; height:90px; top:-55px; right:-35px; border-radius:50%; background:rgba(255,98,56,.09); }
+    .deadline strong { color:var(--red); font-size:20px; }
+
+    #result { padding:4px 0; }
+    #result .result-mark { display:grid; width:46px; height:46px; margin-bottom:18px; place-items:center; border-radius:50%; background:#e5f5ef; color:var(--green); font-size:22px; font-weight:900; }
+    #result h2 { margin:0 0 8px; color:var(--green); font-size:26px; letter-spacing:-.025em; }
+    #result p { margin:10px 0; color:var(--muted); line-height:1.55; }
+    #result-id { color:var(--ink)!important; font-weight:800; }
+    .pass-rule { margin:18px 0!important; padding:16px; border:1px solid var(--line); border-radius:14px; background:var(--surface-soft); }
+    #result-link { display:inline-flex; align-items:center; gap:7px; color:var(--blue); font-weight:850; text-decoration:none; }
+    #result-link:hover { text-decoration:underline; }
+    #result-warning { color:var(--red)!important; }
+    .hidden { display:none!important; }
+    .footer-note { margin:28px 0 0; color:#7e8897; font-size:12px; line-height:1.45; text-align:center; }
+
+    @media(max-width:900px) {
+      main { padding-top:54px; }
+      .layout { grid-template-columns:1fr; }
+      .method { grid-template-columns:1fr 1fr; }
+      .method-title,.deadline { grid-column:1/-1; }
+    }
+    @media(max-width:620px) {
+      main { width:min(100% - 28px,1100px); padding:38px 0 54px; }
+      .hero { margin-bottom:32px; }
+      h1 { font-size:clamp(38px,12vw,54px); }
+      .intro { margin-top:18px; font-size:17px; }
+      .form-card { padding:22px; border-radius:22px; }
+      .field-row,.method { grid-template-columns:1fr; }
+      .trust-strip { grid-template-columns:1fr 1fr; }
+      .method-title,.deadline { grid-column:auto; }
+    }
+    @media(prefers-reduced-motion:reduce) {
+      html { scroll-behavior:auto; }
+      *,*::before,*::after { scroll-behavior:auto!important; transition:none!important; }
+    }
   </style>
 </head>
 <body>
   <main>
-    <div class="eyebrow">EngbrainAI · Lost Customer Audit</div>
-    <h1>Would your Facebook Page answer a buyer in under 2 minutes?</h1>
-    <p class="intro">Paste your Facebook Page. Hermes will send one authorized buyer-style enquiry, time what happens, and show where the conversation loses the sale.</p>
-    <div class="grid">
-      <section class="card">
+    <header class="hero">
+      <div class="eyebrow">EngbrainAI · Hermes Lost Customer Audit</div>
+      <h1>Would your Facebook Page answer a buyer in <span>under 2 minutes?</span></h1>
+      <p class="intro">Paste your Facebook Page. Hermes will send one authorized buyer-style enquiry, time what happens, and show where the conversation loses the sale.</p>
+    </header>
+
+    <div class="layout">
+      <section class="form-card" aria-label="Start a Facebook response audit">
         <form id="audit-form">
-          <label for="businessName">Business name</label>
-          <input id="businessName" name="businessName" placeholder="Example: Oak Wine & Steak" required>
-          <label for="pageUrl">Facebook Page URL</label>
-          <input id="pageUrl" name="pageUrl" type="url" placeholder="https://www.facebook.com/your-page" required>
-          <label for="customerQuestion">A normal first customer question</label>
-          <textarea id="customerQuestion" name="customerQuestion" required placeholder="Hi, do you have availability this week and what does it cost?"></textarea>
-          <label class="consent"><input id="authorized" name="authorized" type="checkbox" required><span>I own this Page or have permission to run one response-time test. Hermes may send one clearly labelled audit enquiry. A useful answer must arrive within <strong>2 minutes</strong> to pass.</span></label>
+          <div class="field-row">
+            <div class="field">
+              <label for="businessName">Business name</label>
+              <input id="businessName" name="businessName" autocomplete="organization" placeholder="Example: Oak Wine & Steak" required>
+            </div>
+            <div class="field">
+              <label for="pageUrl">Facebook Page URL</label>
+              <input id="pageUrl" name="pageUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://facebook.com/your-page" required>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="customerQuestion">A normal customer enquiry</label>
+            <textarea id="customerQuestion" name="customerQuestion" required placeholder="Hi, do you have availability this week and what does it cost?"></textarea>
+          </div>
+
+          <div class="trust-strip" aria-label="Audit safeguards">
+            <div class="trust-item"><span class="trust-icon" aria-hidden="true">✓</span><span>One message only</span></div>
+            <div class="trust-item"><span class="trust-icon" aria-hidden="true">✓</span><span>Authorized test</span></div>
+            <div class="trust-item"><span class="trust-icon" aria-hidden="true">✓</span><span>Real timestamps</span></div>
+            <div class="trust-item"><span class="trust-icon" aria-hidden="true">×</span><span>No fake scores</span></div>
+          </div>
+
+          <label class="consent">
+            <input id="authorized" name="authorized" type="checkbox" required>
+            <span>I own this Page or have permission to run one response-time test. Hermes may send one clearly labelled audit enquiry. A useful answer must arrive within <strong>2 minutes</strong> to pass.</span>
+          </label>
+
           <button id="submit" type="submit">Run my Facebook audit</button>
-          <div id="error" class="error" role="alert"></div>
+          <div id="error" class="error" role="alert" aria-live="polite"></div>
         </form>
-        <section id="result" class="card hidden" aria-live="polite">
+
+        <section id="result" class="hidden" aria-live="polite">
+          <div class="result-mark" aria-hidden="true">✓</div>
           <h2>Audit queued</h2>
           <p id="result-id"></p>
           <p>Your authorized audit is now in the durable queue. The clock starts only after the browser confirms that the message was sent.</p>
-          <p><strong>Pass rule:</strong> a useful answer in under 2 minutes. A generic auto-reply alone does not pass.</p>
-          <p><a id="result-link" href="#" style="color:#91a7e8;font-weight:800">Watch the live audit report →</a></p>
+          <p class="pass-rule"><strong>Pass rule:</strong> a useful answer in under 2 minutes. A generic auto-reply alone does not pass.</p>
+          <p><a id="result-link" href="#">Watch the live audit report <span aria-hidden="true">→</span></a></p>
           <p id="result-warning" class="error"></p>
         </section>
+
+        <p class="footer-note">A controlled, consented mystery-customer test. Browser or Messenger failures are reported honestly and remain unscored.</p>
       </section>
-      <aside class="card">
-        <div class="eyebrow">What gets tested</div>
-        <ol class="steps">
-          <li><span class="num">1</span><span>Can a customer open a real Messenger conversation from your Facebook Page?</span></li>
-          <li><span class="num">2</span><span>Does the Page send an immediate acknowledgement?</span></li>
-          <li><span class="num">3</span><span>Does anyone give a useful answer within 2 minutes?</span></li>
-          <li><span class="num">4</span><span>Does the reply move the customer forward with qualification, booking, or a clear next step?</span></li>
-        </ol>
+
+      <aside class="method" aria-label="What the audit tests">
+        <div class="method-title">What gets tested</div>
+        <section class="step">
+          <span class="num">1</span>
+          <div><h2>Connectivity</h2><p>Can a customer open a real Messenger conversation from your Facebook Page?</p></div>
+        </section>
+        <section class="step">
+          <span class="num">2</span>
+          <div><h2>Responsiveness</h2><p>Does the Page send an immediate acknowledgement to the buyer?</p></div>
+        </section>
+        <section class="step">
+          <span class="num">3</span>
+          <div><h2>Speed-to-lead</h2><p>Does anyone give a useful answer within 2 minutes?</p></div>
+        </section>
+        <section class="step">
+          <span class="num">4</span>
+          <div><h2>Conversion</h2><p>Does the reply move the customer forward with qualification, booking, or a clear next step?</p></div>
+        </section>
         <div class="deadline">No useful reply by 2:00 = <strong>F</strong>. That is the exact sales leak Hermes can close with an AI Sales Agent.</div>
       </aside>
     </div>
   </main>
+
   <script>
     const form = document.querySelector('#audit-form')
     const submit = document.querySelector('#submit')
