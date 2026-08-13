@@ -7,6 +7,8 @@ const { Readable } = require('node:stream')
 
 const { buildAuditRequest, createReportToken, hashReportToken } = require('../lib/facebook-audit')
 const { createAuditRecord } = require('../lib/facebook-audit-state')
+const { buildWebsiteAuditRequest } = require('../lib/website-audit')
+const { createWebsiteAuditRecord } = require('../lib/website-audit-state')
 const { FileAuditStore, MemoryAuditStore } = require('../lib/facebook-audit-store')
 const { normalizeBlobEtag, VercelBlobAuditStore } = require('../lib/vercel-blob-audit-store')
 
@@ -18,6 +20,16 @@ function makeRecord(name, now) {
     authorized: true
   }, now)
   return createAuditRecord(request, hashReportToken(createReportToken()))
+}
+
+function makeWebsiteRecord(name, now) {
+  const request = buildWebsiteAuditRequest({
+    businessName: name,
+    websiteUrl: `https://${name.toLowerCase().replace(/\s/g, '')}.example`,
+    customerQuestion: 'What does your service cost?',
+    authorized: true
+  }, now)
+  return createWebsiteAuditRecord(request, hashReportToken(createReportToken()))
 }
 
 test('MemoryAuditStore claims one queued audit atomically', async () => {
@@ -36,6 +48,26 @@ test('MemoryAuditStore claims one queued audit atomically', async () => {
   assert.equal(claimA.status, 'starting')
   assert.equal(claimB.status, 'starting')
   assert.equal(new Set([claimA.claimedBy, claimB.claimedBy]).size, 2)
+})
+
+test('workers claim only their selected channel type', async () => {
+  const store = new MemoryAuditStore()
+  const facebook = makeRecord('Facebook Business', new Date('2026-08-13T08:00:00.000Z'))
+  const website = makeWebsiteRecord('Website Business', new Date('2026-08-13T08:00:01.000Z'))
+  await store.create(facebook)
+  await store.create(website)
+
+  const claimedWebsite = await store.claimNext('website-worker', new Date('2026-08-13T08:02:00.000Z'), {
+    auditTypes: ['website']
+  })
+  const claimedFacebook = await store.claimNext('facebook-worker', new Date('2026-08-13T08:02:01.000Z'), {
+    auditTypes: ['facebook']
+  })
+
+  assert.equal(claimedWebsite.auditId, website.auditId)
+  assert.equal(claimedWebsite.auditType, 'website')
+  assert.equal(claimedFacebook.auditId, facebook.auditId)
+  assert.equal(claimedFacebook.auditType, 'facebook')
 })
 
 test('MemoryAuditStore update enforces expected version', async () => {

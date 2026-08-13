@@ -166,7 +166,7 @@ class AuditWorker {
   }
 
   async processNext() {
-    const claimed = await this.store.claimNext(this.workerId, this.now())
+    const claimed = await this.store.claimNext(this.workerId, this.now(), { auditTypes: ['facebook'] })
     if (!claimed) return null
     const auditId = claimed.auditId
 

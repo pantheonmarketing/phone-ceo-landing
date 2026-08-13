@@ -3,11 +3,13 @@ const http = require('node:http')
 const path = require('node:path')
 const { URL } = require('node:url')
 const { createHandler: createAuditApiHandler, notifyTelegram } = require('../api/facebook-audit')
+const { createHandler: createWebsiteAuditApiHandler, notifyTelegram: notifyWebsiteTelegram } = require('../api/website-audit')
 const { recordAuditEvent } = require('../lib/facebook-audit-state')
 
 const DASHBOARD_PATH = path.join(__dirname, 'dashboard.html')
 const AUDIT_FORM_PATH = path.join(__dirname, '..', 'facebook-audit.html')
 const AUDIT_RESULT_PATH = path.join(__dirname, '..', 'facebook-audit-result.html')
+const COMBINED_AUDIT_RESULT_PATH = path.join(__dirname, '..', 'audit-result.html')
 
 function sanitizeAudit(record) {
   if (!record) return null
@@ -95,11 +97,19 @@ function localRequest(req) {
   }
 }
 
-function createDashboardServer({ store, controller, host = '127.0.0.1', port = 4317, notifyInitial = notifyTelegram }) {
+function createDashboardServer({
+  store,
+  controller,
+  host = '127.0.0.1',
+  port = 4317,
+  notifyInitial = notifyTelegram,
+  notifyWebsiteInitial = notifyWebsiteTelegram
+}) {
   if (!isLoopbackHost(host)) throw new Error('Dashboard host must be loopback-only')
   const streams = new Set()
   let dashboardHtml
   const auditApiHandler = createAuditApiHandler({ store, notifyTelegram: notifyInitial })
+  const websiteAuditApiHandler = createWebsiteAuditApiHandler({ store, notifyTelegram: notifyWebsiteInitial })
 
   function publish(event, data) {
     const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
@@ -136,10 +146,20 @@ function createDashboardServer({ store, controller, host = '127.0.0.1', port = 4
         return sendHtmlFile(res, AUDIT_RESULT_PATH)
       }
 
+      if (req.method === 'GET' && requestUrl.pathname === '/audit-result.html') {
+        return sendHtmlFile(res, COMBINED_AUDIT_RESULT_PATH)
+      }
+
       if (requestUrl.pathname === '/api/facebook-audit' && ['GET', 'POST', 'OPTIONS'].includes(req.method)) {
         req.query = Object.fromEntries(requestUrl.searchParams)
         if (req.method === 'POST') req.body = await readJson(req)
         return auditApiHandler(req, createNodeApiResponse(res))
+      }
+
+      if (requestUrl.pathname === '/api/website-audit' && ['GET', 'POST', 'OPTIONS'].includes(req.method)) {
+        req.query = Object.fromEntries(requestUrl.searchParams)
+        if (req.method === 'POST') req.body = await readJson(req)
+        return websiteAuditApiHandler(req, createNodeApiResponse(res))
       }
 
       if (req.method === 'GET' && requestUrl.pathname === '/api/audits') {
