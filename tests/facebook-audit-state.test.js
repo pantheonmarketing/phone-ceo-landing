@@ -7,6 +7,7 @@ const {
   createAuditRecord,
   prepareMessageSend,
   publicAuditView,
+  reconcileAmbiguousSend,
   transitionAudit
 } = require('../lib/facebook-audit-state')
 const { buildAuditRequest, createReportToken, hashReportToken } = require('../lib/facebook-audit')
@@ -60,6 +61,60 @@ test('errors before a send stay unscored and cannot be marked failed', () => {
   assert.equal(view.status, 'error')
   assert.equal(view.grade, null)
   assert.equal(view.error.code, 'facebook_login_required')
+})
+
+test('a visually confirmed ambiguous send can be reconciled conservatively after its deadline', () => {
+  let { audit } = record()
+  audit = transitionAudit(audit, 'starting', {}, new Date('2026-08-13T08:00:01.000Z'))
+  audit = prepareMessageSend(audit, 'attempt-1', new Date('2026-08-13T08:00:02.000Z'))
+  audit = transitionAudit(audit, 'error', {
+    code: 'send_ambiguous',
+    message: 'Send confirmation timed out'
+  }, new Date('2026-08-13T08:00:09.000Z'))
+  const score = {
+    grade: 'F',
+    passed: false,
+    label: 'No useful answer within 2 minutes',
+    responseSeconds: null,
+    behaviorBand: 'D',
+    behaviorLabel: 'Channel reachable, but no acknowledgement or useful answer'
+  }
+
+  audit = reconcileAmbiguousSend(audit, {
+    sentAt: '2026-08-13T08:00:09.000Z',
+    observedUntil: '2026-08-13T08:02:30.000Z',
+    score,
+    evidenceBasis: 'Facebook displayed the audit bubble as sent by the audit account'
+  })
+
+  assert.equal(audit.status, 'failed')
+  assert.equal(audit.sentAt, '2026-08-13T08:00:09.000Z')
+  assert.equal(audit.deadlineAt, '2026-08-13T08:02:09.000Z')
+  assert.equal(audit.score.grade, 'F')
+  assert.equal(audit.error, null)
+  assert.equal(audit.sendGuard.state, 'sent')
+  assert.equal(audit.sendReconciliation.conservativeLatestBound, true)
+  assert.deepEqual(audit.events.slice(-2).map(event => event.type), ['message_sent_reconciled', 'failed'])
+})
+
+test('ambiguous-send reconciliation rejects missing proof or an observation before the deadline', () => {
+  let { audit } = record()
+  audit = transitionAudit(audit, 'starting', {}, new Date('2026-08-13T08:00:01.000Z'))
+  audit = prepareMessageSend(audit, 'attempt-1', new Date('2026-08-13T08:00:02.000Z'))
+  audit = transitionAudit(audit, 'error', { code: 'send_ambiguous' }, new Date('2026-08-13T08:00:09.000Z'))
+  const score = { grade: 'F', passed: false, label: 'No useful answer within 2 minutes' }
+
+  assert.throws(() => reconcileAmbiguousSend(audit, {
+    sentAt: '2026-08-13T08:00:09.000Z',
+    observedUntil: '2026-08-13T08:02:30.000Z',
+    score
+  }), /evidence basis/i)
+  assert.throws(() => reconcileAmbiguousSend(audit, {
+    sentAt: '2026-08-13T08:00:09.000Z',
+    observedUntil: '2026-08-13T08:02:08.999Z',
+    score,
+    evidenceBasis: 'Visual proof'
+  }), /full two-minute deadline/i)
 })
 
 test('reply observations cannot fabricate a reply before the confirmed send', () => {

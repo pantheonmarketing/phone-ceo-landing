@@ -86,6 +86,30 @@ test('sendMessage timestamps only after conversation verification', async () => 
   assert.equal(result.sentAt, '2026-08-13T08:00:06.000Z')
 })
 
+test('sendMessage uses the verification time when Facebook omits a bubble timestamp', async () => {
+  const verifiedAt = new Date('2026-08-13T08:00:06.250Z')
+  const browser = new FacebookMessengerBrowser({
+    profileDirectory: 'test-profile',
+    now: () => verifiedAt
+  })
+  browser.auditId = 'FBA-ABCDEF12'
+  browser.composer = { async fill() {}, async press() {} }
+  browser.page = { waitForTimeout: async () => {} }
+  browser._collectEntries = async () => [{
+    text: 'Message sent by You: Audit ID: FBA-ABCDEF12',
+    id: 'facebook-accessible-message-label',
+    timestampMs: null
+  }]
+
+  const result = await browser.sendMessage('Audit question', { auditId: 'FBA-ABCDEF12' })
+
+  assert.equal(result.sentAt, verifiedAt.toISOString())
+  assert.deepEqual(browser.sentMessageEvidence, {
+    id: 'facebook-accessible-message-label',
+    timestampMs: verifiedAt.getTime()
+  })
+})
+
 test('observation uses the confirmed sent timestamp as its reply boundary', async () => {
   const confirmedAt = Date.now() - 1000
   let reads = 0
@@ -452,6 +476,21 @@ test('_collectEntries preserves missing timestamps and propagates collection fai
 
   const brokenPage = { locator: () => ({ evaluateAll: async () => { throw new Error('detached') } }) }
   await assert.rejects(browser._collectEntries(brokenPage), error => error.code === 'conversation_collection_failed')
+})
+
+test('_collectEntries includes Facebook Messenger role articles', async () => {
+  let requestedSelector = ''
+  const browser = new FacebookMessengerBrowser({ profileDirectory: 'test-profile' })
+  const page = {
+    locator(selector) {
+      requestedSelector = selector
+      return { evaluateAll: async () => [] }
+    }
+  }
+
+  await browser._collectEntries(page)
+
+  assert.match(requestedSelector, /\[role="article"\]/)
 })
 
 test('selectNewConversationEntries fails closed without post-send timestamps', () => {

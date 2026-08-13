@@ -268,7 +268,7 @@ class FacebookMessengerBrowser {
 
   async _collectEntries(page = this.page) {
     try {
-      return await page.locator('[data-audit-message], [role="main"] [role="row"], [aria-label*="Messages" i] [role="row"]').evaluateAll(nodes => {
+      return await page.locator('[data-audit-message], [role="article"], [role="main"] [role="row"], [aria-label*="Messages" i] [role="row"]').evaluateAll(nodes => {
         const unique = new Map()
         for (const node of nodes) {
           const text = String(node.innerText || node.textContent || '').replace(/\s+/g, ' ').trim()
@@ -432,12 +432,12 @@ class FacebookMessengerBrowser {
     }
     if (!verified) throw Object.assign(new Error('The sent message could not be verified in the conversation'), { code: 'send_not_confirmed' })
     const sentEntry = (await this._collectEntries()).find(entry => normalizeEntry(entry).toLowerCase().includes(String(this.auditId).toLowerCase()))
-    const sentTimestampMs = entryTimestampMs(sentEntry)
-    if (!sentEntry || !Number.isFinite(sentTimestampMs)) {
-      throw Object.assign(new Error('The sent message did not provide reliable post-send evidence'), { code: 'send_evidence_unavailable' })
-    }
-    this.sentMessageEvidence = { id: entryIdentity(sentEntry), timestampMs: sentTimestampMs }
-    return { sentAt: this.now().toISOString() }
+    if (!sentEntry) throw Object.assign(new Error('The sent message did not provide reliable post-send evidence'), { code: 'send_evidence_unavailable' })
+    const confirmedAt = this.now()
+    const confirmedAtMs = confirmedAt.getTime()
+    if (!Number.isFinite(confirmedAtMs)) throw new Error('The confirmed send timestamp is invalid')
+    this.sentMessageEvidence = { id: entryIdentity(sentEntry), timestampMs: confirmedAtMs }
+    return { sentAt: confirmedAt.toISOString() }
   }
 
   async observeUntil({ deadlineAt, onReply }) {
