@@ -464,9 +464,47 @@
         background: var(--green-soft);
       }
 
+      @keyframes journeyPulse {
+        0%, 100% {
+          transform: scale(1);
+          box-shadow: 0 0 0 4px var(--surface), 0 0 0 5px rgba(49, 91, 232, 0.2);
+        }
+        50% {
+          transform: scale(1.06);
+          box-shadow: 0 0 0 4px var(--surface), 0 0 0 12px rgba(49, 91, 232, 0);
+        }
+      }
+
+      @keyframes journeyConnectorFlow {
+        from { background-position: 0 100%; }
+        to { background-position: 0 -100%; }
+      }
+
       .journey-step.active .step-icon {
         color: white;
         background: var(--blue);
+        animation: journeyPulse 1.6s ease-in-out infinite;
+      }
+
+      .journey-step.active::after {
+        content: "";
+        position: absolute;
+        top: 40px;
+        left: 19px;
+        width: 2px;
+        height: 23px;
+        background: linear-gradient(to bottom, transparent, var(--blue), transparent);
+        background-size: 100% 200%;
+        transform: translateX(-50%);
+        animation: journeyConnectorFlow 1.6s linear infinite;
+      }
+
+      .journey-step.active:last-child::after {
+        display: none;
+      }
+
+      .journey-step.active .step-title {
+        color: var(--blue);
       }
 
       .journey-step.missed .step-icon {
@@ -840,6 +878,15 @@
       }
 
       @media (prefers-reduced-motion: reduce) {
+        .journey-step.active .step-icon,
+        .journey-step.active::after {
+          animation: none !important;
+        }
+
+        .journey-step.active .step-icon {
+          box-shadow: 0 0 0 4px var(--surface), 0 0 0 7px rgba(49, 91, 232, 0.22);
+        }
+
         *, *::before, *::after {
           scroll-behavior: auto !important;
           animation-duration: 0.01ms !important;
@@ -1033,6 +1080,8 @@
       function setJourneyStep(id, { state = "pending", at = null, note = null } = {}) {
         const step = document.querySelector(id);
         step.className = `journey-step ${state}`;
+        if (state === "active") step.setAttribute("aria-current", "step");
+        else step.removeAttribute("aria-current");
         step.querySelector("time").textContent = at ? fmt(at) : "";
         if (note) step.querySelector(".step-note").textContent = note;
       }
