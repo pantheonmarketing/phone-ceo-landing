@@ -71,11 +71,30 @@ class AuditWorker {
       await this._event(auditId, 'page_opening', { status: 'starting', message: 'Opening submitted Facebook Page' })
       const pageState = await this.browser.openPage(claimed)
       if (!pageState?.loggedIn) {
-        const error = await this._error(auditId, 'facebook_login_required', 'Dedicated Facebook audit profile must be logged in')
+        const pageError = pageState?.reason === 'facebook_page_host_unverified'
+        const identityError = pageState?.reason === 'facebook_page_identity_unverified'
+        const error = await this._error(
+          auditId,
+          pageError ? 'facebook_page_host_unverified' : identityError ? 'facebook_page_identity_unverified' : 'facebook_login_required',
+          pageError
+            ? 'The opened page was not verified as a Facebook Page'
+            : identityError
+              ? 'The opened Facebook Page did not match the submitted Page'
+              : 'Dedicated Facebook audit profile must be logged in'
+        )
         await this._notifyWithoutChangingResult(error)
         return error
       }
-      await this._event(auditId, 'page_opened', { status: 'starting', message: 'Facebook Page opened' })
+      if (pageState.dedicatedProfileSelected !== true) {
+        const error = await this._error(auditId, 'facebook_profile_not_selected', 'The dedicated Facebook audit browser profile was not selected')
+        await this._notifyWithoutChangingResult(error)
+        return error
+      }
+      await this._event(auditId, 'page_opened', {
+        status: 'starting',
+        dedicatedProfileSelected: true,
+        message: 'Dedicated audit browser profile selected; Facebook account identity remains a manual acceptance check'
+      })
 
       const messenger = await this.browser.openMessenger(claimed)
       if (!messenger?.reachable) {

@@ -8,19 +8,28 @@ for (const name of ['.env.local', '.env']) {
   }
 }
 
-async function main() {
-  const browser = new FacebookMessengerBrowser({
-    profileDirectory: resolveAuditBrowserProfile(process.env, process.cwd()),
-    channel: process.env.FACEBOOK_AUDIT_BROWSER_CHANNEL || 'chrome',
+function createLoginBrowser(env = process.env, projectDirectory = process.cwd()) {
+  return new FacebookMessengerBrowser({
+    profileDirectory: resolveAuditBrowserProfile(env, projectDirectory),
+    channel: env.FACEBOOK_AUDIT_BROWSER_CHANNEL || 'chrome',
+    executablePath: env.FACEBOOK_AUDIT_EXECUTABLE_PATH || '',
     headless: false
   })
+}
+
+async function main() {
+  const browser = createLoginBrowser()
   await browser.openForLogin()
   console.log('Dedicated Facebook audit browser opened. Sign in, verify the account is ready, then close the browser window.')
   await new Promise(resolve => browser.context.once('close', resolve))
 }
 
-main().catch(error => {
-  const safeMessage = error.publicMessage || 'Check the dedicated browser configuration.'
-  console.error(`Dedicated Facebook login could not open: ${safeMessage}`)
-  process.exitCode = 1
-})
+if (require.main === module) {
+  main().catch(error => {
+    const safeMessage = error.publicMessage || 'Check the dedicated browser configuration.'
+    console.error(`Dedicated Facebook login could not open: ${safeMessage}`)
+    process.exitCode = 1
+  })
+}
+
+module.exports = { createLoginBrowser, main }

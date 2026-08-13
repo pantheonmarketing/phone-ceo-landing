@@ -37,13 +37,14 @@ test('audit lifecycle records exact timestamped transitions', () => {
   ])
 })
 
-test('one-send guard rejects a second preparation or mismatched confirmation', () => {
+test('one-send guard rejects a second preparation, mismatched, or early confirmation', () => {
   let { audit } = record()
   audit = transitionAudit(audit, 'starting', {}, new Date('2026-08-13T08:00:01.000Z'))
   audit = prepareMessageSend(audit, 'attempt-1', new Date('2026-08-13T08:00:02.000Z'))
 
   assert.throws(() => prepareMessageSend(audit, 'attempt-2'), /already been prepared/i)
   assert.throws(() => confirmMessageSent(audit, 'attempt-2'), /attempt does not match/i)
+  assert.throws(() => confirmMessageSent(audit, 'attempt-1', new Date('2026-08-13T08:00:01.500Z')), /predate send preparation/i)
 })
 
 test('errors before a send stay unscored and cannot be marked failed', () => {
@@ -59,6 +60,19 @@ test('errors before a send stay unscored and cannot be marked failed', () => {
   assert.equal(view.status, 'error')
   assert.equal(view.grade, null)
   assert.equal(view.error.code, 'facebook_login_required')
+})
+
+test('reply observations cannot fabricate a reply before the confirmed send', () => {
+  let { audit } = record()
+  audit = transitionAudit(audit, 'starting')
+  audit = prepareMessageSend(audit, 'attempt-1')
+  audit = confirmMessageSent(audit, 'attempt-1', new Date('2026-08-13T08:00:03.000Z'))
+  audit = transitionAudit(audit, 'waiting')
+  assert.throws(() => applyReplyObservation(audit, {
+    text: 'Reply',
+    receivedAt: '2026-08-13T08:00:02.000Z',
+    classification: { isUseful: true }
+  }), /predate the confirmed send/i)
 })
 
 test('reply observations preserve first reply and first useful reply', () => {

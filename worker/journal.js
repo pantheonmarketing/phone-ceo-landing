@@ -22,7 +22,20 @@ class FacebookAuditJournal {
   async read() {
     try {
       const content = await fs.readFile(this.filePath, 'utf8')
-      return content.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line))
+      const lines = content.split(/\r?\n/)
+      const entries = []
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index]
+        if (!line) continue
+        try {
+          entries.push(JSON.parse(line))
+        } catch (error) {
+          const isTrailingIncompleteLine = index === lines.length - 1 && !/\r?\n$/.test(content)
+          if (isTrailingIncompleteLine && error instanceof SyntaxError) break
+          throw error
+        }
+      }
+      return entries
     } catch (error) {
       if (error.code === 'ENOENT') return []
       throw error

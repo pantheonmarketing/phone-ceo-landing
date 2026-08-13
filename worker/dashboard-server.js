@@ -32,14 +32,35 @@ async function readJson(req) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
 }
 
+function isLoopbackHost(value) {
+  const raw = String(value || '').toLowerCase()
+  const host = raw.startsWith('[') ? raw.slice(1, raw.indexOf(']')) : raw.replace(/:\d+$/, '')
+  return host === '127.0.0.1' || host === '::1' || host === 'localhost'
+}
+
+function isLoopbackAddress(value) {
+  const address = String(value || '').toLowerCase().replace(/^::ffff:/, '')
+  return address === '::1' || address === '127.0.0.1' || address === 'localhost'
+}
+
 function localRequest(req) {
   const host = String(req.headers.host || '').toLowerCase()
-  const origin = String(req.headers.origin || '').toLowerCase()
-  const localHost = /^(127\.0\.0\.1|localhost)(:\d+)?$/.test(host)
-  return localHost && (!origin || origin === `http://${host}` || origin === `https://${host}`)
+  const origin = String(req.headers.origin || '').trim()
+  const localHost = isLoopbackHost(host)
+  const localSocket = !req.socket?.remoteAddress || isLoopbackAddress(req.socket.remoteAddress)
+  if (!localHost || !localSocket) return false
+  if (!origin) return true
+  try {
+    const parsed = new URL(origin)
+    return ['http:', 'https:'].includes(parsed.protocol) && isLoopbackHost(parsed.hostname) &&
+      (!parsed.port || !host.includes(':') || parsed.port === host.split(':').at(-1))
+  } catch {
+    return false
+  }
 }
 
 function createDashboardServer({ store, controller, host = '127.0.0.1', port = 4317 }) {
+  if (!isLoopbackHost(host)) throw new Error('Dashboard host must be loopback-only')
   const streams = new Set()
   let dashboardHtml
 
@@ -55,6 +76,7 @@ function createDashboardServer({ store, controller, host = '127.0.0.1', port = 4
 
   const server = http.createServer(async (req, res) => {
     try {
+      if (!localRequest(req)) return sendJson(res, 403, { error: 'Local dashboard access only' })
       const requestUrl = new URL(req.url, `http://${req.headers.host || `${host}:${port}`}`)
 
       if (req.method === 'GET' && requestUrl.pathname === '/') {
@@ -107,7 +129,6 @@ function createDashboardServer({ store, controller, host = '127.0.0.1', port = 4
       }
 
       if (req.method === 'POST' && requestUrl.pathname === '/api/control') {
-        if (!localRequest(req)) return sendJson(res, 403, { error: 'Local dashboard access only' })
         const body = await readJson(req)
         if (body.action === 'pause') controller.pause()
         else if (body.action === 'resume') controller.resume()
@@ -117,27 +138,23 @@ function createDashboardServer({ store, controller, host = '127.0.0.1', port = 4
 
       const classifyMatch = req.method === 'POST' && requestUrl.pathname.match(/^\/api\/audits\/(FBA-[A-F0-9]{8})\/classify$/i)
       if (classifyMatch) {
-        if (!localRequest(req)) return sendJson(res, 403, { error: 'Local dashboard access only' })
         const body = await readJson(req)
         const replyId = String(body.replyId || '')
+        if (typeof body.isUseful !== 'boolean') throw new Error('A manual usefulness decision is required')
         const updated = await store.update(classifyMatch[1].toUpperCase(), current => {
           if (current.status !== 'waiting') throw new Error('Only an active waiting audit can be manually classified')
           const reply = current.replies.find(item => item.replyId === replyId)
           if (!reply) throw new Error('Reply not found')
-          reply.classification = {
-            ...reply.classification,
-            isUseful: Boolean(body.isUseful),
-            isAutoAcknowledgement: Boolean(body.isAutoAcknowledgement),
-            hasQualificationQuestion: Boolean(body.hasQualificationQuestion),
-            hasBookingCta: Boolean(body.hasBookingCta),
-            hasClearNextAction: Boolean(body.hasClearNextAction),
-            manuallyReviewed: true
+          const classification = { ...reply.classification, isUseful: body.isUseful, manuallyReviewed: true }
+          for (const field of ['isAutoAcknowledgement', 'hasQualificationQuestion', 'hasBookingCta', 'hasClearNextAction']) {
+            if (typeof body[field] === 'boolean') classification[field] = body[field]
           }
-          if (reply.classification.isUseful) current.usefulReplyAt ||= reply.receivedAt
-          current.observations.autoAcknowledged ||= reply.classification.isAutoAcknowledgement
-          current.observations.qualificationQuestion ||= reply.classification.hasQualificationQuestion
-          current.observations.bookingCta ||= reply.classification.hasBookingCta
-          current.observations.clearNextAction ||= reply.classification.hasClearNextAction
+          reply.classification = classification
+          if (classification.isUseful) current.usefulReplyAt ||= reply.receivedAt
+          current.observations.autoAcknowledged ||= Boolean(classification.isAutoAcknowledgement)
+          current.observations.qualificationQuestion ||= Boolean(classification.hasQualificationQuestion)
+          current.observations.bookingCta ||= Boolean(classification.hasBookingCta)
+          current.observations.clearNextAction ||= Boolean(classification.hasClearNextAction)
           return recordAuditEvent(current, 'manual_classification', {
             status: current.status,
             replyId,
@@ -155,6 +172,7 @@ function createDashboardServer({ store, controller, host = '127.0.0.1', port = 4
         'Unknown control action',
         'Only an active waiting audit can be manually classified',
         'Reply not found',
+        'A manual usefulness decision is required',
         'Evidence not found'
       ])
       sendJson(res, 400, { error: safeMessages.has(error.message) ? error.message : 'Dashboard request failed' })

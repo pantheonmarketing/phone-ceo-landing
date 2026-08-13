@@ -37,6 +37,13 @@ test('buildAuditRequest rejects a non-Facebook URL and an unauthorized test', ()
   }), /authorization/)
 })
 
+test('Facebook Page URLs reject embedded credentials', () => {
+  assert.throws(
+    () => normalizeFacebookPageUrl('https://alice:secret@www.facebook.com/examplebusiness'),
+    /cannot contain credentials/
+  )
+})
+
 test('Facebook profile.php Page URLs preserve their numeric Page ID', () => {
   assert.equal(
     normalizeFacebookPageUrl('https://www.facebook.com/profile.php?id=61574382802393&utm_source=test'),
@@ -80,12 +87,17 @@ test('scoreFacebookAudit gives an A when a useful answer arrives within one minu
   })
 })
 
-test('scoreFacebookAudit gives a B for a useful answer from 61 through 120 seconds', () => {
-  const result = scoreFacebookAudit({ sentAtMs: 0, usefulReplyAtMs: 119500 }, 120000)
+test('scoreFacebookAudit gives a B when the exact response time exceeds one minute', () => {
+  const result = scoreFacebookAudit({ sentAtMs: 0, usefulReplyAtMs: 60400 }, 120000)
 
   assert.equal(result.grade, 'B')
   assert.equal(result.passed, true)
-  assert.equal(result.responseSeconds, 120)
+  assert.equal(result.responseSeconds, 61)
+  assert.equal(result.label, 'Useful answer in 61 seconds')
+
+  const later = scoreFacebookAudit({ sentAtMs: 0, usefulReplyAtMs: 119500 }, 120000)
+  assert.equal(later.grade, 'B')
+  assert.equal(later.responseSeconds, 120)
 })
 
 test('generic auto reply alone is an F with a C diagnostic band', () => {
@@ -129,6 +141,30 @@ test('classifyFacebookReply rejects generic acknowledgements and identifies usef
   assert.equal(auto.isAutoAcknowledgement, true)
   assert.equal(auto.isUseful, false)
 
+  const generic = classifyFacebookReply('Yes.', {
+    customerQuestion: 'Do you have availability this week and what does it cost?'
+  })
+  assert.equal(generic.answersQuestion, false)
+  assert.equal(generic.isUseful, false)
+
+  const genericFiller = classifyFacebookReply('Yes, we can help.', {
+    customerQuestion: 'Do you have availability this week and what does it cost?'
+  })
+  assert.equal(genericFiller.answersQuestion, false)
+  assert.equal(genericFiller.isUseful, false)
+
+  const echoedOffer = classifyFacebookReply('Yes, we offer private events.', {
+    customerQuestion: 'Do you offer private events?'
+  })
+  assert.equal(echoedOffer.answersQuestion, false)
+  assert.equal(echoedOffer.isUseful, false)
+
+  const partial = classifyFacebookReply('Yes, we have a table Friday at 7pm.', {
+    customerQuestion: 'Do you have availability this week and what does it cost?'
+  })
+  assert.equal(partial.isUseful, true)
+  assert.equal(partial.answersQuestion, true)
+
   const useful = classifyFacebookReply('Yes, we have a table Friday at 7pm. It is $65 per person. Would you like me to reserve it?', {
     customerQuestion: 'Do you have availability this week and what does it cost?'
   })
@@ -137,4 +173,113 @@ test('classifyFacebookReply rejects generic acknowledgements and identifies usef
   assert.equal(useful.hasQualificationQuestion, true)
   assert.equal(useful.hasBookingCta, true)
   assert.equal(useful.hasClearNextAction, true)
+
+  const acknowledgedUseful = classifyFacebookReply('Thanks for contacting us. Our price is $50.', {
+    customerQuestion: 'What does it cost?'
+  })
+  assert.equal(acknowledgedUseful.isAutoAcknowledgement, true)
+  assert.equal(acknowledgedUseful.answersQuestion, true)
+  assert.equal(acknowledgedUseful.isUseful, true)
+
+  const unrelated = classifyFacebookReply('We are open.', {
+    customerQuestion: 'What is your refund policy?'
+  })
+  assert.equal(unrelated.isUseful, false)
+  assert.equal(unrelated.hasClearNextAction, false)
+
+  const unrelatedOffer = classifyFacebookReply('Yes, we are open.', {
+    customerQuestion: 'Do you offer private events?'
+  })
+  assert.equal(unrelatedOffer.answersQuestion, false)
+  assert.equal(unrelatedOffer.isUseful, false)
+
+  const echoedPrivateEvents = classifyFacebookReply('Yes, private events are private.', {
+    customerQuestion: 'Do you offer private events?'
+  })
+  assert.equal(echoedPrivateEvents.answersQuestion, false)
+  assert.equal(echoedPrivateEvents.isUseful, false)
+
+  const unrelatedAction = classifyFacebookReply('Book now through our calendar.', {
+    customerQuestion: 'What is your refund policy?'
+  })
+  assert.equal(unrelatedAction.isUseful, false)
+  assert.equal(unrelatedAction.hasBookingCta, true)
+
+  const unrelatedCancellationAction = classifyFacebookReply('Book now through our calendar.', {
+    customerQuestion: 'How can I cancel my appointment?'
+  })
+  assert.equal(unrelatedCancellationAction.isUseful, false)
+
+  const cancellationBookingRedirect = classifyFacebookReply('To cancel, book now through our calendar.', {
+    customerQuestion: 'How can I cancel my appointment?'
+  })
+  assert.equal(cancellationBookingRedirect.isUseful, false)
+})
+
+test('classifyFacebookReply rejects generic pricing and echoed cancellation policy phrases', () => {
+  const echoedPrice = classifyFacebookReply('Our price is our price.', {
+    customerQuestion: 'What does it cost?'
+  })
+  assert.equal(echoedPrice.answersQuestion, false)
+  assert.equal(echoedPrice.isUseful, false)
+
+  const vaguePricing = classifyFacebookReply('Our pricing varies.', {
+    customerQuestion: 'What does it cost?'
+  })
+  assert.equal(vaguePricing.answersQuestion, false)
+  assert.equal(vaguePricing.isUseful, false)
+
+  const meaninglessPricingFactor = classifyFacebookReply('Our pricing depends on it.', {
+    customerQuestion: 'What does it cost?'
+  })
+  assert.equal(meaninglessPricingFactor.answersQuestion, false)
+  assert.equal(meaninglessPricingFactor.isUseful, false)
+
+  const usefulContactDetails = classifyFacebookReply('Our phone number is 555-0100.', {
+    customerQuestion: 'What is your phone number?'
+  })
+  assert.equal(usefulContactDetails.answersQuestion, true)
+  assert.equal(usefulContactDetails.isUseful, true)
+
+  const echoedRefund = classifyFacebookReply('Our refund policy is to book now through our calendar.', {
+    customerQuestion: 'What is your refund policy?'
+  })
+  assert.equal(echoedRefund.answersQuestion, false)
+  assert.equal(echoedRefund.isUseful, false)
+
+  const vagueRefundProcedure = classifyFacebookReply('Our refund policy is to contact us.', {
+    customerQuestion: 'What is your refund policy?'
+  })
+  assert.equal(vagueRefundProcedure.answersQuestion, false)
+  assert.equal(vagueRefundProcedure.isUseful, false)
+
+  const usefulRefund = classifyFacebookReply('Refunds are available within 7 days of purchase.', {
+    customerQuestion: 'What is your refund policy?'
+  })
+  assert.equal(usefulRefund.answersQuestion, true)
+  assert.equal(usefulRefund.isUseful, true)
+
+  const vagueRefund = classifyFacebookReply('We are available to answer your refund questions.', {
+    customerQuestion: 'What is your refund policy?'
+  })
+  assert.equal(vagueRefund.answersQuestion, false)
+  assert.equal(vagueRefund.isUseful, false)
+
+  const genericRefund = classifyFacebookReply('Yes.', {
+    customerQuestion: 'Do you offer refunds?'
+  })
+  assert.equal(genericRefund.answersQuestion, false)
+  assert.equal(genericRefund.isUseful, false)
+
+  const contactAction = classifyFacebookReply('Message us.', {
+    customerQuestion: 'How can I contact you?'
+  })
+  assert.equal(contactAction.answersQuestion, false)
+  assert.equal(contactAction.isUseful, true)
+
+  const vagueRefundConfirmation = classifyFacebookReply('Yes, we offer refunds.', {
+    customerQuestion: 'Do you offer refunds?'
+  })
+  assert.equal(vagueRefundConfirmation.answersQuestion, false)
+  assert.equal(vagueRefundConfirmation.isUseful, false)
 })

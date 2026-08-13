@@ -25,7 +25,7 @@ test('worker sends once, records a useful reply, passes, and notifies', async ()
   const notifications = []
   let sends = 0
   const browser = {
-    async openPage() { return { loggedIn: true } },
+    async openPage() { return { loggedIn: true, dedicatedProfileSelected: true } },
     async openMessenger() { return { reachable: true } },
     async captureEvidence() { return null },
     async sendMessage(message) {
@@ -56,6 +56,11 @@ test('worker sends once, records a useful reply, passes, and notifies', async ()
   assert.equal(sends, 1)
   assert.equal(journal.length, 1)
   assert.equal(journal[0].type, 'browser_send_completed')
+  const opened = await store.get(initial.auditId)
+  const pageOpened = opened.events.find(event => event.type === 'page_opened')
+  assert.equal(pageOpened.dedicatedProfileSelected, true)
+  assert.equal('profileIsolationConfirmed' in pageOpened, false)
+  assert.match(pageOpened.message, /manual acceptance check/i)
   assert.equal(notifications.length, 1)
 })
 
@@ -81,11 +86,28 @@ test('worker marks login failure as an unscored error', async () => {
   assert.equal(result.sentAt, null)
 })
 
+test('worker fails unscored when profile selection evidence is absent', async () => {
+  const store = new MemoryAuditStore()
+  await queuedAudit(store)
+  let sends = 0
+  const browser = {
+    async openPage() { return { loggedIn: true } },
+    async openMessenger() { sends += 1; return { reachable: true } },
+    async closeAudit() {}
+  }
+  const worker = new AuditWorker({ store, browser, workerId: 'worker-test', notifyFinal: async () => {} })
+  const result = await worker.processNext()
+  assert.equal(result.status, 'error')
+  assert.equal(result.error.code, 'facebook_profile_not_selected')
+  assert.equal(result.score, null)
+  assert.equal(sends, 0)
+})
+
 test('worker applies the hard F rule after a sent message receives only an auto reply', async () => {
   const store = new MemoryAuditStore()
   await queuedAudit(store)
   const browser = {
-    async openPage() { return { loggedIn: true } },
+    async openPage() { return { loggedIn: true, dedicatedProfileSelected: true } },
     async openMessenger() { return { reachable: true } },
     async captureEvidence() { return null },
     async sendMessage() { return { sentAt: '2026-08-13T08:00:10.000Z' } },

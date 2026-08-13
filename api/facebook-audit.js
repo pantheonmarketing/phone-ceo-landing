@@ -10,14 +10,92 @@ const {
 } = require('../lib/facebook-audit-state')
 const { createAuditStoreFromEnv } = require('../lib/facebook-audit-store')
 
+const MAX_REQUEST_BYTES = 16 * 1024
+const DEFAULT_POST_LIMIT = 5
+const DEFAULT_POST_WINDOW_MS = 10 * 60 * 1000
+const DEFAULT_MAX_RATE_LIMIT_KEYS = 10000
+
+function createRateLimiter({
+  limit = DEFAULT_POST_LIMIT,
+  windowMs = DEFAULT_POST_WINDOW_MS,
+  maxKeys = DEFAULT_MAX_RATE_LIMIT_KEYS,
+  now = () => Date.now()
+} = {}) {
+  const buckets = new Map()
+  const capacity = Number.isFinite(maxKeys) ? Math.max(1, Math.floor(maxKeys)) : DEFAULT_MAX_RATE_LIMIT_KEYS
+  return {
+    check(key) {
+      const current = now()
+      for (const [storedKey, bucket] of buckets) {
+        if (current - bucket.startedAt >= windowMs) buckets.delete(storedKey)
+      }
+      const bucketKey = String(key || 'unknown').slice(0, 200)
+      const previous = buckets.get(bucketKey)
+      if (!previous) {
+        while (buckets.size >= capacity) buckets.delete(buckets.keys().next().value)
+        buckets.set(bucketKey, { startedAt: current, count: 1 })
+        return { allowed: true, remaining: Math.max(0, limit - 1) }
+      }
+      if (previous.count >= limit) {
+        return {
+          allowed: false,
+          retryAfterSeconds: Math.max(1, Math.ceil((windowMs - (current - previous.startedAt)) / 1000))
+        }
+      }
+      previous.count += 1
+      return { allowed: true, remaining: Math.max(0, limit - previous.count) }
+    },
+    size: () => buckets.size
+  }
+}
+
+const defaultPostRateLimiter = createRateLimiter()
+
 const json = (res, status, body) => {
   res
     .status(status)
-    .setHeader('Access-Control-Allow-Origin', '*')
     .setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Audit-Report-Token')
     .setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    .setHeader('Vary', 'Origin')
     .setHeader('Cache-Control', 'no-store')
+    .setHeader('X-Content-Type-Options', 'nosniff')
     .json(body)
+}
+
+function requestOrigin(req) {
+  const origin = String(req.headers?.origin || '').trim()
+  if (!origin) return ''
+  const configured = String(process.env.FACEBOOK_AUDIT_ALLOWED_ORIGIN || '').trim().replace(/\/$/, '')
+  if (configured) return origin.replace(/\/$/, '') === configured ? configured : null
+  const host = String(req.headers?.host || '').trim().toLowerCase()
+  return origin === `https://${host}` || origin === `http://${host}` ? origin : null
+}
+
+function requestOriginAllowed(req) {
+  return requestOrigin(req) !== null
+}
+
+function clientKey(req) {
+  return String(req.socket?.remoteAddress || 'unknown')
+}
+
+function storeRateLimiter(store) {
+  if (typeof store.consumeRateLimit !== 'function') return defaultPostRateLimiter
+  return {
+    check: key => store.consumeRateLimit({
+      key,
+      limit: DEFAULT_POST_LIMIT,
+      windowMs: DEFAULT_POST_WINDOW_MS
+    })
+  }
+}
+
+function requestTooLarge(body) {
+  try {
+    return Buffer.byteLength(JSON.stringify(body || {}), 'utf8') > MAX_REQUEST_BYTES
+  } catch {
+    return true
+  }
 }
 
 async function sendTelegram(text) {
@@ -73,10 +151,27 @@ function single(value) {
   return Array.isArray(value) ? value[0] : value
 }
 
-function createHandler({ store, notifyTelegram: notify = notifyTelegram } = {}) {
+function createHandler({ store, notifyTelegram: notify = notifyTelegram, rateLimiter } = {}) {
   return async function handler(req, res) {
-    if (req.method === 'OPTIONS') return json(res, 200, {})
+    const origin = requestOrigin(req)
+    if (origin === null) return json(res, 403, { error: 'Cross-origin audit requests are not allowed' })
+    if (origin) res.setHeader('Access-Control-Allow-Origin', origin)
+    if (req.method === 'OPTIONS') return json(res, 204, {})
     const auditStore = store || getDefaultStore()
+    if (req.method === 'POST') {
+      let decision
+      try {
+        decision = await Promise.resolve((rateLimiter || storeRateLimiter(auditStore)).check(clientKey(req)))
+      } catch (error) {
+        console.error('Facebook audit rate limiter failed', { code: error.code || error.name })
+        return json(res, 503, { error: 'The audit service is temporarily unavailable.' })
+      }
+      if (!decision.allowed) {
+        res.setHeader('Retry-After', String(decision.retryAfterSeconds))
+        return json(res, 429, { error: 'Too many audit requests. Please try again later.' })
+      }
+      if (requestTooLarge(req.body)) return json(res, 413, { error: 'Audit request is too large' })
+    }
 
     if (req.method === 'GET') {
       const auditId = String(single(req.query?.auditId) || '').trim()
@@ -145,3 +240,5 @@ module.exports = handler
 module.exports.createHandler = createHandler
 module.exports.notifyFinalTelegram = notifyFinalTelegram
 module.exports.notifyTelegram = notifyTelegram
+module.exports.createRateLimiter = createRateLimiter
+module.exports.requestOriginAllowed = requestOriginAllowed

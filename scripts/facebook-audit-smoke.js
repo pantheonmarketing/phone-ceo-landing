@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict')
+const { execFileSync } = require('node:child_process')
 const fs = require('node:fs/promises')
 const http = require('node:http')
 const os = require('node:os')
@@ -31,6 +32,9 @@ async function startFixture() {
   const address = server.address()
   return {
     url: `http://127.0.0.1:${address.port}/facebook-page`,
+    html: () => html,
+    sessionHtml: () => `${html}<a href="/logout">Log out</a>`,
+    recordSend: () => { sends += 1 },
     sends: () => sends,
     stop: () => new Promise(resolve => server.close(resolve))
   }
@@ -46,6 +50,26 @@ async function waitForResult(store, auditId, timeoutMs = 20000) {
   throw new Error('Controlled smoke audit did not reach a terminal state')
 }
 
+function linuxBrowserAvailable() {
+  if (process.platform !== 'linux') return true
+  const executablePath = process.env.FACEBOOK_AUDIT_EXECUTABLE_PATH
+  const channel = process.env.FACEBOOK_AUDIT_BROWSER_CHANNEL || 'chrome'
+  const channelCandidates = channel === 'chromium'
+    ? ['chromium', 'chromium-browser']
+    : channel.startsWith('chrome')
+      ? ['google-chrome', 'google-chrome-stable']
+      : [channel]
+  const candidates = [executablePath, ...channelCandidates].filter(Boolean)
+  return candidates.some(candidate => {
+    try {
+      execFileSync('which', [candidate], { stdio: 'ignore' })
+      return true
+    } catch {
+      return false
+    }
+  })
+}
+
 async function waitFor(condition, timeoutMs = 5000) {
   const expires = Date.now() + timeoutMs
   while (Date.now() < expires) {
@@ -53,6 +77,39 @@ async function waitFor(condition, timeoutMs = 5000) {
     await new Promise(resolve => setTimeout(resolve, 50))
   }
   throw new Error('Controlled smoke post-result work did not finish')
+}
+
+function createFixtureRouteHandler(fixture) {
+  return async route => {
+    if (new URL(route.request().url()).pathname === '/fixture-send') {
+      fixture.recordSend()
+      return route.fulfill({ status: 204, body: '' })
+    }
+    const body = new URL(route.request().url()).pathname === '/me' && fixture.sessionHtml
+      ? fixture.sessionHtml()
+      : fixture.html()
+    return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body })
+  }
+}
+
+async function installFixtureRoutes(context, fixture) {
+  const handler = createFixtureRouteHandler(fixture)
+  await context.route('https://facebook.com/**', handler)
+  await context.route('https://www.facebook.com/**', handler)
+}
+
+function configureFixtureBrowser(browser, fixture) {
+  const launch = browser.launch.bind(browser)
+  let routedContext = null
+  browser.launch = async () => {
+    const context = await launch()
+    if (context !== routedContext) {
+      await installFixtureRoutes(context, fixture)
+      routedContext = context
+    }
+    return context
+  }
+  return browser
 }
 
 async function main() {
@@ -69,16 +126,16 @@ async function main() {
       customerQuestion: 'Do you have availability this week and what does it cost?',
       authorized: true
     })
-    request.pageUrl = fixture.url
     const record = createAuditRecord(request, hashReportToken(createReportToken()))
     await store.create(record)
 
-    browser = new FacebookMessengerBrowser({
+    browser = configureFixtureBrowser(new FacebookMessengerBrowser({
       profileDirectory: path.join(temp, 'browser-profile'),
       channel: process.env.FACEBOOK_AUDIT_BROWSER_CHANNEL || 'chrome',
+      executablePath: process.env.FACEBOOK_AUDIT_EXECUTABLE_PATH || '',
       headless: true,
       pollIntervalMs: 100
-    })
+    }), fixture)
     const notifications = []
     const worker = new AuditWorker({
       store,
@@ -99,7 +156,11 @@ async function main() {
     await waitForResult(store, record.auditId)
     await waitFor(() => notifications.length === 1)
     const result = await store.get(record.auditId)
-    const dashboardHtml = await (await fetch(dashboardState.url)).text()
+    if (result.status === 'error' && result.error?.code === 'browser_launch_failed' && !linuxBrowserAvailable()) {
+      console.log('Controlled browser smoke: SKIP - Linux/WSL has no configured Chrome executable; run this smoke in the supported Windows environment.')
+      return
+    }
+    const dashboardResponse = await fetch(dashboardState.url)
     const dashboardData = await (await fetch(`${dashboardState.url}api/audits`)).json()
     const eventTypes = result.events.map(event => event.type)
 
@@ -112,7 +173,9 @@ async function main() {
     for (const required of ['submitted', 'starting', 'page_opening', 'page_opened', 'messenger_reachable', 'message_prepared', 'message_sent', 'waiting', 'reply_detected', 'passed']) {
       assert.ok(eventTypes.includes(required), `Missing smoke event: ${required}`)
     }
-    assert.match(dashboardHtml, /Every worker action/i)
+    assert.equal(dashboardResponse.status, 200)
+    assert.equal(dashboardResponse.headers.get('x-frame-options'), 'DENY')
+    assert.match(dashboardResponse.headers.get('content-type'), /text\/html/i)
     assert.equal(dashboardData.audits[0].auditId, record.auditId)
     assert.equal('reportTokenHash' in dashboardData.audits[0], false)
 
@@ -135,7 +198,11 @@ async function main() {
   }
 }
 
-main().catch(error => {
-  console.error(`Controlled browser smoke: FAIL - ${error.message}`)
-  process.exitCode = 1
-})
+if (require.main === module) {
+  main().catch(error => {
+    console.error(`Controlled browser smoke: FAIL - ${error.message}`)
+    process.exitCode = 1
+  })
+}
+
+module.exports = { configureFixtureBrowser, createFixtureRouteHandler, installFixtureRoutes }
