@@ -87,6 +87,38 @@ class AuditWorker {
     }
   }
 
+  async _discloseAfterRealReply(auditId, classification, receivedAt) {
+    if (classification?.isAutoAcknowledgement || !this.browser.sendAuditDisclosure) return null
+    const audit = await this.store.get(auditId)
+    if (!audit || audit.disclosure?.state !== 'pending') return null
+    try {
+      const sent = await this.browser.sendAuditDisclosure(audit.disclosureMessage, { auditId })
+      const sentAt = new Date(sent?.sentAt || receivedAt || this.now())
+      await this.store.update(auditId, current => {
+        const next = recordAuditEvent(current, 'audit_disclosed', {
+          status: current.status,
+          message: 'Audit identity disclosed after a real business response'
+        }, sentAt)
+        next.disclosure = { state: 'sent', sentAt: sentAt.toISOString() }
+        return next
+      })
+      await this._evidence(auditId, 'Audit disclosed after response')
+      return sentAt
+    } catch (error) {
+      const failedAt = new Date(receivedAt || this.now())
+      await this.store.update(auditId, current => {
+        const next = recordAuditEvent(current, 'audit_disclosure_failed', {
+          status: current.status,
+          code: String(error.code || error.name || 'audit_disclosure_failed').slice(0, 120),
+          message: 'Audit disclosure could not be confirmed; it will not be retried automatically'
+        }, failedAt)
+        next.disclosure = { state: 'failed', sentAt: null }
+        return next
+      }).catch(() => {})
+      return null
+    }
+  }
+
   async _monitorLateReplies(audit) {
     if (audit.status !== 'failed' || audit.score?.grade !== 'F' || this.lateReplyWindowMs <= 120000) return audit
     const lateDeadlineAt = new Date(new Date(audit.sentAt).getTime() + this.lateReplyWindowMs)
@@ -111,6 +143,7 @@ class AuditWorker {
             classification
           }))
           await this._evidence(audit.auditId, classification.isUseful ? 'Useful late reply detected' : 'Late reply detected')
+          await this._discloseAfterRealReply(audit.auditId, classification, receivedAt)
           await this._notifyLateWithoutChangingResult(await this.store.get(audit.auditId), updated.replies.at(-1))
           return { stop: classification.isUseful, classification }
         }
@@ -214,6 +247,9 @@ class AuditWorker {
             classification
           }))
           await this._evidence(auditId, classification.isUseful ? 'Useful reply detected' : 'Reply detected')
+          if (classification.isUseful) {
+            await this._discloseAfterRealReply(auditId, classification, reply.receivedAt)
+          }
           return { stop: classification.isUseful, classification }
         }
       })
@@ -240,7 +276,14 @@ class AuditWorker {
         message: score.label
       }, observedUntil))
       await this._evidence(auditId, `Audit ${finalStatus}`)
-      const withEvidence = await this.store.get(auditId)
+      let withEvidence = await this.store.get(auditId)
+      if (withEvidence.disclosure?.state === 'pending') {
+        const firstRealReply = withEvidence.replies.find(reply => !reply.classification?.isAutoAcknowledgement)
+        if (firstRealReply) {
+          await this._discloseAfterRealReply(auditId, firstRealReply.classification, observedUntil)
+          withEvidence = await this.store.get(auditId)
+        }
+      }
       await this._notifyWithoutChangingResult(withEvidence)
       return this._monitorLateReplies(withEvidence)
     } catch (error) {

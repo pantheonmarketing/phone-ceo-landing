@@ -122,6 +122,7 @@ class FacebookMessengerBrowser {
     this.page = null
     this.composer = null
     this.baselineEntries = new Set()
+    this.baselineEntryIds = new Set()
     this.sentMessage = ''
     this.auditId = ''
     this.targetPageUrl = ''
@@ -430,17 +431,34 @@ class FacebookMessengerBrowser {
 
   async _captureStableBaseline() {
     let previous = null
+    let latestIds = new Set()
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      const current = new Set((await this._collectEntries()).map(normalizeEntry))
+      const entries = await this._collectEntries()
+      const current = new Set(entries.map(normalizeEntry))
+      latestIds = new Set(entries.map(entryIdentity))
       if (previous && current.size === previous.size && [...current].every(entry => previous.has(entry))) {
         this.baselineEntries = current
+        this.baselineEntryIds = latestIds
         return true
       }
       previous = current
       await this.page.waitForTimeout(250)
     }
     this.baselineEntries = previous || new Set()
+    this.baselineEntryIds = latestIds
     return false
+  }
+
+  async _waitForNewMessage(message, existingIds, timeoutMs = 6000) {
+    const expected = normalizeEntry(message)
+    const verificationDeadline = Date.now() + timeoutMs
+    while (Date.now() < verificationDeadline) {
+      const entries = await this._collectEntries()
+      const match = entries.find(entry => normalizeEntry(entry) === expected && !existingIds.has(entryIdentity(entry)))
+      if (match) return match
+      await this.page.waitForTimeout(200)
+    }
+    return null
   }
 
   async sendMessage(message, { auditId } = {}) {
@@ -453,24 +471,25 @@ class FacebookMessengerBrowser {
     }
     await this.composer.fill(this.sentMessage)
     await this.composer.press('Enter')
-    const verificationDeadline = Date.now() + 6000
-    let verified = false
-    while (Date.now() < verificationDeadline) {
-      const entries = await this._collectEntries()
-      if (entries.some(entry => normalizeEntry(entry).toLowerCase().includes(String(this.auditId).toLowerCase()))) {
-        verified = true
-        break
-      }
-      await this.page.waitForTimeout(200)
-    }
-    if (!verified) throw Object.assign(new Error('The sent message could not be verified in the conversation'), { code: 'send_not_confirmed' })
-    const sentEntry = (await this._collectEntries()).find(entry => normalizeEntry(entry).toLowerCase().includes(String(this.auditId).toLowerCase()))
-    if (!sentEntry) throw Object.assign(new Error('The sent message did not provide reliable post-send evidence'), { code: 'send_evidence_unavailable' })
+    const sentEntry = await this._waitForNewMessage(this.sentMessage, this.baselineEntryIds)
+    if (!sentEntry) throw Object.assign(new Error('The sent message could not be verified in the conversation'), { code: 'send_not_confirmed' })
     const confirmedAt = this.now()
     const confirmedAtMs = confirmedAt.getTime()
     if (!Number.isFinite(confirmedAtMs)) throw new Error('The confirmed send timestamp is invalid')
     this.sentMessageEvidence = { id: entryIdentity(sentEntry), timestampMs: confirmedAtMs }
     return { sentAt: confirmedAt.toISOString() }
+  }
+
+  async sendAuditDisclosure(message) {
+    if (!this.composer) throw Object.assign(new Error('Messenger composer is not ready'), { code: 'messenger_composer_missing' })
+    const disclosure = String(message || '').trim()
+    if (!disclosure) throw Object.assign(new Error('Audit disclosure message is missing'), { code: 'audit_disclosure_missing' })
+    const existingIds = new Set((await this._collectEntries()).map(entryIdentity))
+    await this.composer.fill(disclosure)
+    await this.composer.press('Enter')
+    const sentEntry = await this._waitForNewMessage(disclosure, existingIds)
+    if (!sentEntry) throw Object.assign(new Error('The audit disclosure could not be verified in the conversation'), { code: 'audit_disclosure_not_confirmed' })
+    return { sentAt: this.now().toISOString() }
   }
 
   async observeUntil({ deadlineAt, onReply }) {
@@ -519,6 +538,7 @@ class FacebookMessengerBrowser {
     this.page = null
     this.composer = null
     this.baselineEntries = new Set()
+    this.baselineEntryIds = new Set()
     this.sentMessage = ''
     this.auditId = ''
     this.targetPageUrl = ''
