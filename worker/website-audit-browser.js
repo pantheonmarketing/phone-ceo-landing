@@ -43,6 +43,14 @@ function isSafeChatLauncher({ tagName, href } = {}) {
   return tag === 'button' || tag === 'div' || tag === 'span'
 }
 
+function isInspectableFrameUrl(value) {
+  try {
+    return ['http:', 'https:'].includes(new URL(String(value || '')).protocol)
+  } catch {
+    return false
+  }
+}
+
 function isPrivateAddress(address) {
   const raw = String(address || '').replace(/^::ffff:/, '').replace(/^\[|\]$/g, '')
   if (net.isIPv4(raw)) return isPrivateHostname(raw)
@@ -222,6 +230,7 @@ class WebsiteAuditBrowser {
       'input[placeholder*="message" i]'
     ]
     for (const frame of this.page.frames()) {
+      if (!isInspectableFrameUrl(frame.url())) continue
       for (const selector of selectors) {
         const candidates = frame.locator(selector)
         for (let index = 0; index < await candidates.count().catch(() => 0); index += 1) {
@@ -420,6 +429,7 @@ module.exports = {
   chooseContactClicks,
   classifyContactHref,
   detectChatProvider,
+  isInspectableFrameUrl,
   isSafeChatLauncher,
   isPrivateAddress
 }

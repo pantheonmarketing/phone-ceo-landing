@@ -99,3 +99,24 @@ test('website worker never retries an ambiguous chat send and reports an unscore
   assert.equal(result.error.code, 'website_chat_send_unconfirmed')
   assert.equal(sends, 1)
 })
+
+test('website worker fails safely when buyer-path mapping exceeds its deadline', async () => {
+  const store = new MemoryAuditStore()
+  await queued(store)
+  let closed = false
+  const browser = {
+    async openWebsite() { return { reachable: true } },
+    async inspectBuyerJourney() { return new Promise(() => {}) },
+    async captureEvidence() { return null },
+    async closeAudit() { closed = true }
+  }
+  const worker = new WebsiteAuditWorker({ store, browser, mappingTimeoutMs: 10 })
+
+  const result = await worker.processNext()
+
+  assert.equal(result.status, 'error')
+  assert.equal(result.score, null)
+  assert.equal(result.error.code, 'website_mapping_timeout')
+  assert.match(result.error.message, /contact-path mapping took too long/i)
+  assert.equal(closed, true)
+})
