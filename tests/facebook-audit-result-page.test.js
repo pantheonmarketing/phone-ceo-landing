@@ -6,6 +6,9 @@ const path = require('node:path')
 const page = fs.readFileSync(path.join(__dirname, '..', 'facebook-audit-result.html'), 'utf8')
 
 test('approved light report centers the score, measured gap, and friendly journey', () => {
+  assert.match(page, /AI CEOS Audit Results/)
+  assert.doesNotMatch(page, /Hermes Audit Result|Hermes authorized lost customer audit/i)
+  assert.match(page, /© 2026 EngbrainAI\. A controlled, authorized mystery-customer test\./)
   assert.match(page, /Performance score/i)
   assert.match(page, /\/100/)
   assert.match(page, /away from an A/i)

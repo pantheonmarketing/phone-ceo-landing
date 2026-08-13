@@ -139,7 +139,7 @@ test('local dashboard serves the existing audit form and queues only authorized 
 
   const resultPageResponse = await fetch(`${started.url}facebook-audit-result.html`)
   assert.equal(resultPageResponse.status, 200)
-  assert.match(await resultPageResponse.text(), /Audit Report/i)
+  assert.match(await resultPageResponse.text(), /AI CEOS Audit Results/i)
 
   const reportResponse = await fetch(`${started.url}api/facebook-audit?auditId=${queued.auditId}&token=${queued.reportToken}`)
   assert.equal(reportResponse.status, 200)
