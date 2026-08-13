@@ -33,15 +33,23 @@ test('worker sends once, records a useful reply, passes, and notifies', async ()
   const journal = []
   const notifications = []
   let sends = 0
+  let disclosures = 0
   const browser = {
     async openPage() { return { loggedIn: true, dedicatedProfileSelected: true } },
     async openMessenger() { return { reachable: true } },
     async captureEvidence() { return null },
     async sendMessage(message) {
       sends += 1
-      assert.match(message, new RegExp(initial.auditId))
+      assert.equal(message, initial.customerQuestion)
+      assert.doesNotMatch(message, /audit|FBA-/i)
       clock.set('2026-08-13T08:00:10.000Z')
       return { sentAt: '2026-08-13T08:00:10.000Z' }
+    },
+    async sendAuditDisclosure(message) {
+      disclosures += 1
+      assert.match(message, /authorized customer-response audit/i)
+      assert.match(message, new RegExp(initial.auditId))
+      return { sentAt: '2026-08-13T08:00:51.000Z' }
     },
     async observeUntil({ onReply }) {
       await onReply({
@@ -65,6 +73,7 @@ test('worker sends once, records a useful reply, passes, and notifies', async ()
   assert.equal(result.status, 'passed')
   assert.equal(result.score.grade, 'A')
   assert.equal(sends, 1)
+  assert.equal(disclosures, 1)
   assert.equal(journal.length, 1)
   assert.equal(journal[0].type, 'browser_send_completed')
   const opened = await store.get(initial.auditId)
@@ -118,6 +127,7 @@ test('worker applies the hard F rule after a sent message receives only an auto 
   const store = new MemoryAuditStore()
   await queuedAudit(store)
   const clock = testClock()
+  let disclosures = 0
   const browser = {
     async openPage() { return { loggedIn: true, dedicatedProfileSelected: true } },
     async openMessenger() { return { reachable: true } },
@@ -126,6 +136,7 @@ test('worker applies the hard F rule after a sent message receives only an auto 
       clock.set('2026-08-13T08:00:10.000Z')
       return { sentAt: '2026-08-13T08:00:10.000Z' }
     },
+    async sendAuditDisclosure() { disclosures += 1 },
     async observeUntil({ onReply }) {
       await onReply({
         text: 'Thanks for contacting us. We will get back to you soon.',
@@ -148,6 +159,45 @@ test('worker applies the hard F rule after a sent message receives only an auto 
   assert.equal(result.status, 'failed')
   assert.equal(result.score.grade, 'F')
   assert.equal(result.score.behaviorBand, 'C')
+  assert.equal(disclosures, 0)
+})
+
+test('worker waits until scoring is complete before disclosing after a partial human reply', async () => {
+  const store = new MemoryAuditStore()
+  const initial = await queuedAudit(store)
+  const clock = testClock()
+  let observationFinished = false
+  let disclosures = 0
+  const browser = {
+    async openPage() { return { loggedIn: true, dedicatedProfileSelected: true } },
+    async openMessenger() { return { reachable: true } },
+    async captureEvidence() { return null },
+    async sendMessage() {
+      clock.set('2026-08-13T08:00:10.000Z')
+      return { sentAt: '2026-08-13T08:00:10.000Z' }
+    },
+    async sendAuditDisclosure(message) {
+      assert.equal(observationFinished, true)
+      assert.match(message, new RegExp(initial.auditId))
+      disclosures += 1
+      return { sentAt: '2026-08-13T08:02:11.000Z' }
+    },
+    async observeUntil({ onReply }) {
+      await onReply({ text: 'Hi there', receivedAt: '2026-08-13T08:00:30.000Z' })
+      observationFinished = true
+      return { observedUntil: '2026-08-13T08:02:10.000Z' }
+    },
+    async closeAudit() {}
+  }
+  const worker = new AuditWorker({ store, browser, workerId: 'worker-test', notifyFinal: async () => {}, now: clock.now })
+
+  const result = await worker.processNext()
+
+  assert.equal(result.status, 'failed')
+  assert.equal(result.score.grade, 'F')
+  assert.equal(disclosures, 1)
+  assert.equal(result.disclosure.state, 'sent')
+  assert.equal(result.events.at(-1).type, 'audit_disclosed')
 })
 
 test('worker records a useful late reply without changing the F result', async () => {

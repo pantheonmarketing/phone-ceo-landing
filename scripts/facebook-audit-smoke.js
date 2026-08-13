@@ -167,10 +167,10 @@ async function main() {
     assert.equal(result.status, 'passed')
     assert.equal(result.score.grade, 'A')
     assert.equal(result.sendGuard.state, 'sent')
-    assert.equal(fixture.sends(), 1, 'controlled fixture must record exactly one browser send')
+    assert.equal(fixture.sends(), 2, 'controlled fixture must record one buyer question and one post-reply disclosure')
     assert.equal(notifications.length, 1, 'worker must emit exactly one final notification')
     assert.ok(result.evidence.length >= 2)
-    for (const required of ['submitted', 'starting', 'page_opening', 'page_opened', 'messenger_reachable', 'message_prepared', 'message_sent', 'waiting', 'reply_detected', 'passed']) {
+    for (const required of ['submitted', 'starting', 'page_opening', 'page_opened', 'messenger_reachable', 'message_prepared', 'message_sent', 'waiting', 'reply_detected', 'audit_disclosed', 'passed']) {
       assert.ok(eventTypes.includes(required), `Missing smoke event: ${required}`)
     }
     assert.equal(dashboardResponse.status, 200)
@@ -181,7 +181,7 @@ async function main() {
 
     console.log('Controlled browser smoke: PASS')
     console.log(`Audit status: ${result.status}; grade: ${result.score.grade}`)
-    console.log(`Browser sends recorded: ${fixture.sends()}`)
+    console.log(`Browser sends recorded: ${fixture.sends()} (one buyer question, one post-reply disclosure)`)
     console.log(`Timestamped events: ${result.events.length}; evidence frames: ${result.evidence.length}`)
     console.log('Live dashboard API and rendered shell: verified')
     const holdMs = Number(process.env.FACEBOOK_AUDIT_SMOKE_HOLD_MS || 0)

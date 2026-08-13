@@ -61,6 +61,7 @@ test('controlled smoke routes both Facebook hosts through the fixture', async ()
 test('sendMessage timestamps only after conversation verification', async () => {
   let verified = false
   let nowCalls = 0
+  let pressed = false
   const browser = new FacebookMessengerBrowser({
     profileDirectory: 'test-profile',
     now: () => {
@@ -72,12 +73,13 @@ test('sendMessage timestamps only after conversation verification', async () => 
   browser.auditId = 'FBA-ABCDEF12'
   browser.composer = {
     async fill() {},
-    async press() {}
+    async press() { pressed = true }
   }
   browser.page = { waitForTimeout: async () => {} }
   browser._collectEntries = async () => {
+    if (!pressed) return [{ text: 'Previous message', id: 'old-1', timestampMs: Date.now() - 1000 }]
     verified = true
-    return [{ text: 'Audit ID: FBA-ABCDEF12', id: 'sent-1', timestampMs: Date.now() }]
+    return [{ text: 'Previous message', id: 'old-1', timestampMs: Date.now() - 1000 }, { text: 'Audit question', id: 'sent-1', timestampMs: Date.now() }]
   }
 
   const result = await browser.sendMessage('Audit question', { auditId: 'FBA-ABCDEF12' })
@@ -93,13 +95,14 @@ test('sendMessage uses the verification time when Facebook omits a bubble timest
     now: () => verifiedAt
   })
   browser.auditId = 'FBA-ABCDEF12'
-  browser.composer = { async fill() {}, async press() {} }
+  let pressed = false
+  browser.composer = { async fill() {}, async press() { pressed = true } }
   browser.page = { waitForTimeout: async () => {} }
-  browser._collectEntries = async () => [{
-    text: 'Message sent by You: Audit ID: FBA-ABCDEF12',
+  browser._collectEntries = async () => pressed ? [{
+    text: 'Audit question',
     id: 'facebook-accessible-message-label',
     timestampMs: null
-  }]
+  }] : []
 
   const result = await browser.sendMessage('Audit question', { auditId: 'FBA-ABCDEF12' })
 
@@ -404,7 +407,7 @@ test('sendMessage stabilizes the conversation baseline before sending', async ()
     reads += 1
     if (reads < 3) return reads === 1 ? [entry('Conversation ready')] : [entry('Conversation ready'), entry('Late loaded history')]
     if (reads === 3) return [entry('Conversation ready'), entry('Late loaded history')]
-    return [entry('Conversation ready'), entry('Late loaded history'), entry('Audit ID: FBA-ABCDEF12', Date.now())]
+    return [entry('Conversation ready'), entry('Late loaded history'), { text: 'Audit question', id: 'sent-question', timestampMs: Date.now() }]
   }
 
   await browser.sendMessage('Audit question', { auditId: 'FBA-ABCDEF12' })

@@ -60,9 +60,10 @@ test('buildAuditRequest accepts a Facebook Page URL and waits to create the dead
   assert.match(result.auditId, /^FBA-[A-Z0-9]{8}$/)
   assert.equal(result.pageUrl, 'https://www.facebook.com/examplebusiness/')
   assert.equal(result.deadlineAt, null)
-  assert.match(result.testMessage, /Hi, do you have availability this week\?/)
-  assert.match(result.testMessage, new RegExp(result.auditId))
-  assert.match(result.testMessage, /authorized customer-response audit/i)
+  assert.equal(result.testMessage, 'Hi, do you have availability this week?')
+  assert.doesNotMatch(result.testMessage, /audit|FBA-/i)
+  assert.match(result.disclosureMessage, new RegExp(result.auditId))
+  assert.match(result.disclosureMessage, /authorized customer-response audit/i)
 })
 
 test('buildAuditRequest rejects a non-Facebook URL and an unauthorized test', () => {

@@ -10,7 +10,7 @@ test('public audit form uses the approved dependency-free light design', () => {
   assert.match(page, /--surface:\s*#fff(?:fff)?/i)
   assert.match(page, /--ink:\s*#101a2f/i)
   assert.match(page, /--orange:\s*#ff6238/i)
-  assert.match(page, /One message only/)
+  assert.match(page, /One buyer question only/)
   assert.match(page, /Authorized test/)
   assert.match(page, /Real timestamps/)
   assert.match(page, /No fake scores/)

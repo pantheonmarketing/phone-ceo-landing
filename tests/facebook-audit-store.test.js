@@ -81,6 +81,41 @@ test('FileAuditStore persists queue records across store instances', async t => 
   assert.equal(stored.events[0].type, 'submitted')
 })
 
+test('FileAuditStore does not expose a partially written record to concurrent readers', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'facebook-audit-store-read-lock-'))
+  t.after(() => fs.rm(directory, { recursive: true, force: true }))
+  const store = new FileAuditStore({ directory })
+  const record = makeRecord('Concurrent Read Business', new Date('2026-08-13T08:00:00.000Z'))
+  await store.create(record)
+
+  const originalWrite = store._writeUnlocked.bind(store)
+  let releaseWrite
+  const writeGate = new Promise(resolve => { releaseWrite = resolve })
+  let partialWritten
+  const partialReady = new Promise(resolve => { partialWritten = resolve })
+  store._writeUnlocked = async next => {
+    await fs.writeFile(store._recordPath(next.auditId), '{"incomplete":', 'utf8')
+    partialWritten()
+    await writeGate
+    return originalWrite(next)
+  }
+
+  const update = store.update(record.auditId, current => ({ ...current, businessName: 'Updated safely' }))
+  await partialReady
+  const read = store.get(record.auditId)
+  let earlyOutcome = null
+  read.then(
+    () => { earlyOutcome = 'resolved' },
+    error => { earlyOutcome = error }
+  )
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(earlyOutcome, null)
+  releaseWrite()
+
+  const [, stored] = await Promise.all([update, read])
+  assert.equal(stored.businessName, 'Updated safely')
+})
+
 test('Vercel Blob weak read ETags are normalized for conditional writes', () => {
   assert.equal(normalizeBlobEtag('W/"abc123"'), '"abc123"')
   assert.equal(normalizeBlobEtag('"abc123"'), '"abc123"')
