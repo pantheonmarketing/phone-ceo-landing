@@ -8,8 +8,9 @@ function makeResponse() {
   return {
     statusCode: null,
     body: null,
+    headers: {},
     status(code) { this.statusCode = code; return this },
-    setHeader() { return this },
+    setHeader(name, value) { this.headers[name] = value; return this },
     json(body) { this.body = body; return this }
   }
 }
@@ -76,6 +77,28 @@ test('facebook audit handler uses the durable store limiter when available', asy
   await handler({ method: 'POST', socket: { remoteAddress: '10.0.0.2' }, body: { authorized: true, pageUrl: 'https://facebook.com/shared-limit' } }, second)
   assert.equal(second.statusCode, 429)
   assert.equal(checks, 2)
+})
+
+test('facebook audit endpoint returns configured CORS origin for preflight and JSON', async () => {
+  const previousOrigin = process.env.FACEBOOK_AUDIT_ALLOWED_ORIGIN
+  process.env.FACEBOOK_AUDIT_ALLOWED_ORIGIN = 'https://dashboard.example'
+  try {
+    const handler = createHandler({ store: new MemoryAuditStore(), notifyTelegram: async () => {} })
+    const options = makeResponse()
+    await handler({ method: 'OPTIONS', headers: { origin: 'https://dashboard.example/' } }, options)
+    assert.equal(options.statusCode, 204)
+    assert.equal(options.headers['Access-Control-Allow-Origin'], 'https://dashboard.example')
+
+    const post = makeResponse()
+    await handler({ method: 'POST', headers: { origin: 'https://dashboard.example' }, body: {
+      pageUrl: 'https://facebook.com/cors-example', authorized: true
+    } }, post)
+    assert.equal(post.statusCode, 200)
+    assert.equal(post.headers['Access-Control-Allow-Origin'], 'https://dashboard.example')
+  } finally {
+    if (previousOrigin === undefined) delete process.env.FACEBOOK_AUDIT_ALLOWED_ORIGIN
+    else process.env.FACEBOOK_AUDIT_ALLOWED_ORIGIN = previousOrigin
+  }
 })
 
 test('facebook audit endpoint rejects cross-origin requests and rate-limits POSTs', async () => {

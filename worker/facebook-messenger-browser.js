@@ -71,6 +71,36 @@ function isMessengerDestination(url) {
   return FACEBOOK_HOSTS.has(url.hostname.toLowerCase()) && /^\/messages\/t\//i.test(url.pathname)
 }
 
+function messengerThreadId(url) {
+  const match = url.pathname.match(/\/(?:messages\/)?t\/([^/?#]+)/i)
+  return match ? decodeURIComponent(match[1]) : null
+}
+
+function facebookPageId(url) {
+  if (normalizedFacebookPath(url) !== '/profile.php') return null
+  const id = url.searchParams.get('id')
+  return /^\d+$/.test(id || '') ? id : null
+}
+
+function messengerBelongsToPage(messengerUrl, pageUrl, pageIdentityUrl = '', pageIdentityId = '') {
+  let targetPage
+  try {
+    targetPage = new URL(pageUrl)
+  } catch {
+    return false
+  }
+  if (pageIdentityUrl) {
+    try {
+      const identity = new URL(pageIdentityUrl)
+      if (identity.protocol === 'https:' && FACEBOOK_HOSTS.has(identity.hostname.toLowerCase()) && sameFacebookPageTarget(pageUrl, identity)) return true
+    } catch {}
+  }
+  const targetId = facebookPageId(targetPage)
+  const identityId = String(pageIdentityId || '').trim()
+  const threadId = messengerThreadId(messengerUrl)
+  return Boolean(threadId && targetId && threadId === targetId) || Boolean(threadId && /^\d+$/.test(identityId) && threadId === identityId)
+}
+
 class FacebookMessengerBrowser {
   constructor({
     profileDirectory,
@@ -270,7 +300,15 @@ class FacebookMessengerBrowser {
     try {
       const destination = new URL(href, this.page.url())
       if (destination.protocol !== 'https:' || (!FACEBOOK_HOSTS.has(destination.hostname.toLowerCase()) && !MESSENGER_HOSTS.has(destination.hostname.toLowerCase()))) return false
-      if (!isMessengerDestination(destination) && !sameFacebookPageTarget(this.targetPageUrl, destination)) return false
+      if (isMessengerDestination(destination)) {
+        let pageIdentityUrl = await Promise.resolve(candidate.getAttribute('data-audit-page-url')).catch(() => '')
+        if (!pageIdentityUrl) pageIdentityUrl = await Promise.resolve(candidate.getAttribute('data-page-url')).catch(() => '')
+        let pageIdentityId = await Promise.resolve(candidate.getAttribute('data-audit-page-id')).catch(() => '')
+        if (!pageIdentityId) pageIdentityId = await Promise.resolve(candidate.getAttribute('data-page-id')).catch(() => '')
+        if (!messengerBelongsToPage(destination, this.targetPageUrl, pageIdentityUrl, pageIdentityId)) return false
+      } else if (!sameFacebookPageTarget(this.targetPageUrl, destination)) {
+        return false
+      }
       destination.hash = ''
       return destination
     } catch {

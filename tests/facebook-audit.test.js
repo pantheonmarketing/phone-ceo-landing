@@ -187,6 +187,12 @@ test('classifyFacebookReply rejects generic acknowledgements and identifies usef
   assert.equal(unrelated.isUseful, false)
   assert.equal(unrelated.hasClearNextAction, false)
 
+  const unrelatedOffer = classifyFacebookReply('Yes, we are open.', {
+    customerQuestion: 'Do you offer private events?'
+  })
+  assert.equal(unrelatedOffer.answersQuestion, false)
+  assert.equal(unrelatedOffer.isUseful, false)
+
   const unrelatedAction = classifyFacebookReply('Book now through our calendar.', {
     customerQuestion: 'What is your refund policy?'
   })
@@ -211,11 +217,23 @@ test('classifyFacebookReply rejects generic pricing and echoed cancellation poli
   assert.equal(echoedPrice.answersQuestion, false)
   assert.equal(echoedPrice.isUseful, false)
 
+  const vaguePricing = classifyFacebookReply('Our pricing varies.', {
+    customerQuestion: 'What does it cost?'
+  })
+  assert.equal(vaguePricing.answersQuestion, false)
+  assert.equal(vaguePricing.isUseful, false)
+
   const echoedRefund = classifyFacebookReply('Our refund policy is to book now through our calendar.', {
     customerQuestion: 'What is your refund policy?'
   })
   assert.equal(echoedRefund.answersQuestion, false)
   assert.equal(echoedRefund.isUseful, false)
+
+  const vagueRefundProcedure = classifyFacebookReply('Our refund policy is to contact us.', {
+    customerQuestion: 'What is your refund policy?'
+  })
+  assert.equal(vagueRefundProcedure.answersQuestion, false)
+  assert.equal(vagueRefundProcedure.isUseful, false)
 
   const usefulRefund = classifyFacebookReply('Refunds are available within 7 days of purchase.', {
     customerQuestion: 'What is your refund policy?'
@@ -234,6 +252,12 @@ test('classifyFacebookReply rejects generic pricing and echoed cancellation poli
   })
   assert.equal(genericRefund.answersQuestion, false)
   assert.equal(genericRefund.isUseful, false)
+
+  const contactAction = classifyFacebookReply('Message us.', {
+    customerQuestion: 'How can I contact you?'
+  })
+  assert.equal(contactAction.answersQuestion, false)
+  assert.equal(contactAction.isUseful, true)
 
   const vagueRefundConfirmation = classifyFacebookReply('Yes, we offer refunds.', {
     customerQuestion: 'Do you offer refunds?'

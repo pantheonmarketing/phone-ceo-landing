@@ -56,18 +56,23 @@ const json = (res, status, body) => {
     .status(status)
     .setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Audit-Report-Token')
     .setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    .setHeader('Vary', 'Origin')
     .setHeader('Cache-Control', 'no-store')
     .setHeader('X-Content-Type-Options', 'nosniff')
     .json(body)
 }
 
-function requestOriginAllowed(req) {
+function requestOrigin(req) {
   const origin = String(req.headers?.origin || '').trim()
-  if (!origin) return true
+  if (!origin) return ''
   const configured = String(process.env.FACEBOOK_AUDIT_ALLOWED_ORIGIN || '').trim().replace(/\/$/, '')
-  if (configured) return origin.replace(/\/$/, '') === configured
+  if (configured) return origin.replace(/\/$/, '') === configured ? configured : null
   const host = String(req.headers?.host || '').trim().toLowerCase()
-  return origin === `https://${host}` || origin === `http://${host}`
+  return origin === `https://${host}` || origin === `http://${host}` ? origin : null
+}
+
+function requestOriginAllowed(req) {
+  return requestOrigin(req) !== null
 }
 
 function clientKey(req) {
@@ -148,7 +153,9 @@ function single(value) {
 
 function createHandler({ store, notifyTelegram: notify = notifyTelegram, rateLimiter } = {}) {
   return async function handler(req, res) {
-    if (!requestOriginAllowed(req)) return json(res, 403, { error: 'Cross-origin audit requests are not allowed' })
+    const origin = requestOrigin(req)
+    if (origin === null) return json(res, 403, { error: 'Cross-origin audit requests are not allowed' })
+    if (origin) res.setHeader('Access-Control-Allow-Origin', origin)
     if (req.method === 'OPTIONS') return json(res, 204, {})
     const auditStore = store || getDefaultStore()
     if (req.method === 'POST') {

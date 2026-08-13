@@ -123,7 +123,11 @@ test('openMessenger rejects a redirected Messenger destination', async () => {
       nth() {
         return {
           async isVisible() { return true },
-          async getAttribute() { return 'https://www.messenger.com/t/intended' },
+          async getAttribute(name) {
+            if (name === 'href') return 'https://www.messenger.com/t/intended'
+            if (name === 'data-audit-page-url') return source.url()
+            return null
+          },
           async click() { pages.push(popup) }
         }
       }
@@ -146,6 +150,34 @@ test('openMessenger rejects a redirected Messenger destination', async () => {
   assert.equal(result.reachable, false)
   assert.equal(result.reason, 'messenger_destination_unverified')
   assert.equal(popupClosed, true)
+})
+
+test('openMessenger rejects an unbound Messenger thread even when its URL is stable', async () => {
+  let clicked = false
+  const source = {
+    url: () => 'https://www.facebook.com/example',
+    locator: selector => ({
+      async count() { return selector === '[data-audit-action="message"]' ? 1 : 0 },
+      nth() {
+        return {
+          async isVisible() { return true },
+          async getAttribute(name) { return name === 'href' ? 'https://www.messenger.com/t/another-page' : null },
+          async click() { clicked = true }
+        }
+      }
+    }),
+    getByRole: () => ({ count: async () => 0 })
+  }
+  const browser = new FacebookMessengerBrowser({ profileDirectory: 'test-profile' })
+  browser.page = source
+  browser.targetPageUrl = source.url()
+  browser.context = { pages: () => [source] }
+  browser._findComposer = async () => null
+
+  const result = await browser.openMessenger()
+
+  assert.equal(result.reachable, false)
+  assert.equal(clicked, false)
 })
 
 test('login browser passes the configured executable to the browser adapter', () => {
