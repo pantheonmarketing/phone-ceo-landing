@@ -3,10 +3,50 @@ const assert = require('node:assert/strict')
 
 const {
   buildAuditRequest,
+  calculateNumericFacebookAuditScore,
   classifyFacebookReply,
   normalizeFacebookPageUrl,
   scoreFacebookAudit
 } = require('../lib/facebook-audit')
+
+test('numeric report score is explainable and preserves the hard letter-grade rule', () => {
+  const result = calculateNumericFacebookAuditScore({
+    customerQuestion: 'Is the August 23 workshop still available?',
+    score: {
+      grade: 'B',
+      passed: true,
+      responseSeconds: 68,
+      behaviorBand: 'B'
+    },
+    observations: {
+      qualificationQuestion: true,
+      bookingCta: false,
+      clearNextAction: false
+    },
+    replies: [{
+      text: 'Yes, the August 23 workshop is available. Would you like to secure your spot?'
+    }]
+  })
+
+  assert.deepEqual(result, {
+    total: 89,
+    usefulAnswer: 70,
+    responseSpeed: 9,
+    qualificationQuestion: 5,
+    clearNextAction: 5,
+    responseSeconds: 68,
+    aGradeGapSeconds: 8,
+    method: 'holistic-v1'
+  })
+
+  assert.equal(calculateNumericFacebookAuditScore({
+    score: { grade: 'F', behaviorBand: 'C' }
+  }).total, 20)
+  assert.equal(calculateNumericFacebookAuditScore({
+    score: { grade: 'F', behaviorBand: 'D' }
+  }).total, 10)
+  assert.equal(calculateNumericFacebookAuditScore({ score: null }), null)
+})
 
 test('buildAuditRequest accepts a Facebook Page URL and waits to create the deadline until send', () => {
   const now = new Date('2026-08-13T08:00:00.000Z')
@@ -35,6 +75,36 @@ test('buildAuditRequest rejects a non-Facebook URL and an unauthorized test', ()
     pageUrl: 'https://facebook.com/examplebusiness',
     authorized: false
   }), /authorization/)
+})
+
+test('buildAuditRequest rejects abusive, threatening, and obfuscated customer questions', () => {
+  const base = {
+    pageUrl: 'https://facebook.com/examplebusiness',
+    businessName: 'Example Business',
+    authorized: true
+  }
+
+  for (const customerQuestion of [
+    'Why is your service so fucking bad?',
+    'You are a sh1tty business.',
+    'Go k!ll yourself.'
+  ]) {
+    assert.throws(
+      () => buildAuditRequest({ ...base, customerQuestion }),
+      /without abusive or offensive language/i
+    )
+  }
+})
+
+test('buildAuditRequest does not block benign words that contain suspicious letter sequences', () => {
+  const result = buildAuditRequest({
+    pageUrl: 'https://facebook.com/examplebusiness',
+    businessName: 'Example Business',
+    customerQuestion: 'Can you assist with the classic package for our Scunthorpe office?',
+    authorized: true
+  })
+
+  assert.match(result.customerQuestion, /classic package/)
 })
 
 test('Facebook Page URLs reject embedded credentials', () => {
@@ -173,6 +243,14 @@ test('classifyFacebookReply rejects generic acknowledgements and identifies usef
   assert.equal(useful.hasQualificationQuestion, true)
   assert.equal(useful.hasBookingCta, true)
   assert.equal(useful.hasClearNextAction, true)
+
+  const secureSpot = classifyFacebookReply('Yes, the August 23 workshop is available. Would you like to secure your spot?', {
+    customerQuestion: 'Is the August 23 workshop still available?'
+  })
+  assert.equal(secureSpot.isUseful, true)
+  assert.equal(secureSpot.hasQualificationQuestion, true)
+  assert.equal(secureSpot.hasBookingCta, true)
+  assert.equal(secureSpot.hasClearNextAction, true)
 
   const acknowledgedUseful = classifyFacebookReply('Thanks for contacting us. Our price is $50.', {
     customerQuestion: 'What does it cost?'

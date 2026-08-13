@@ -6,6 +6,14 @@ const { createAuditRecord } = require('../lib/facebook-audit-state')
 const { MemoryAuditStore } = require('../lib/facebook-audit-store')
 const { AuditWorker } = require('../worker/audit-worker')
 
+function testClock(start = '2026-08-13T08:00:09.000Z') {
+  let value = start
+  return {
+    now: () => new Date(value),
+    set: next => { value = next }
+  }
+}
+
 async function queuedAudit(store) {
   const request = buildAuditRequest({
     businessName: 'Example Business',
@@ -21,6 +29,7 @@ async function queuedAudit(store) {
 test('worker sends once, records a useful reply, passes, and notifies', async () => {
   const store = new MemoryAuditStore()
   const initial = await queuedAudit(store)
+  const clock = testClock()
   const journal = []
   const notifications = []
   let sends = 0
@@ -31,6 +40,7 @@ test('worker sends once, records a useful reply, passes, and notifies', async ()
     async sendMessage(message) {
       sends += 1
       assert.match(message, new RegExp(initial.auditId))
+      clock.set('2026-08-13T08:00:10.000Z')
       return { sentAt: '2026-08-13T08:00:10.000Z' }
     },
     async observeUntil({ onReply }) {
@@ -47,7 +57,8 @@ test('worker sends once, records a useful reply, passes, and notifies', async ()
     browser,
     workerId: 'worker-test',
     journal: { append: entry => journal.push(entry) },
-    notifyFinal: async audit => notifications.push(audit)
+    notifyFinal: async audit => notifications.push(audit),
+    now: clock.now
   })
 
   const result = await worker.processNext()
@@ -106,11 +117,15 @@ test('worker fails unscored when profile selection evidence is absent', async ()
 test('worker applies the hard F rule after a sent message receives only an auto reply', async () => {
   const store = new MemoryAuditStore()
   await queuedAudit(store)
+  const clock = testClock()
   const browser = {
     async openPage() { return { loggedIn: true, dedicatedProfileSelected: true } },
     async openMessenger() { return { reachable: true } },
     async captureEvidence() { return null },
-    async sendMessage() { return { sentAt: '2026-08-13T08:00:10.000Z' } },
+    async sendMessage() {
+      clock.set('2026-08-13T08:00:10.000Z')
+      return { sentAt: '2026-08-13T08:00:10.000Z' }
+    },
     async observeUntil({ onReply }) {
       await onReply({
         text: 'Thanks for contacting us. We will get back to you soon.',
@@ -125,7 +140,8 @@ test('worker applies the hard F rule after a sent message receives only an auto 
     browser,
     workerId: 'worker-test',
     journal: { append() {} },
-    notifyFinal: async () => {}
+    notifyFinal: async () => {},
+    now: clock.now
   })
 
   const result = await worker.processNext()
@@ -137,13 +153,17 @@ test('worker applies the hard F rule after a sent message receives only an auto 
 test('worker records a useful late reply without changing the F result', async () => {
   const store = new MemoryAuditStore()
   const initial = await queuedAudit(store)
+  const clock = testClock()
   const lateNotifications = []
   let observations = 0
   const browser = {
     async openPage() { return { loggedIn: true, dedicatedProfileSelected: true } },
     async openMessenger() { return { reachable: true } },
     async captureEvidence() { return null },
-    async sendMessage() { return { sentAt: '2026-08-13T08:00:10.000Z' } },
+    async sendMessage() {
+      clock.set('2026-08-13T08:00:10.000Z')
+      return { sentAt: '2026-08-13T08:00:10.000Z' }
+    },
     async observeUntil({ onReply }) {
       observations += 1
       if (observations === 1) return { observedUntil: '2026-08-13T08:02:10.000Z' }
@@ -162,7 +182,8 @@ test('worker records a useful late reply without changing the F result', async (
     journal: { append() {} },
     notifyFinal: async () => {},
     notifyLate: async (audit, reply) => lateNotifications.push({ audit, reply }),
-    lateReplyWindowMs: 10 * 60 * 1000
+    lateReplyWindowMs: 10 * 60 * 1000,
+    now: clock.now
   })
 
   const result = await worker.processNext()

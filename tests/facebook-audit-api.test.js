@@ -24,6 +24,29 @@ test('facebook audit endpoint rejects a request without authorization', async ()
   assert.match(res.body.error, /authorization/)
 })
 
+test('facebook audit endpoint rejects abusive questions before queueing or notifying', async () => {
+  const store = new MemoryAuditStore()
+  const notifications = []
+  const handler = createHandler({
+    store,
+    notifyTelegram: async audit => notifications.push(audit),
+    rateLimiter: createRateLimiter({ limit: 100 })
+  })
+  const res = makeResponse()
+
+  await handler({ method: 'POST', body: {
+    businessName: 'Example Business',
+    pageUrl: 'https://facebook.com/examplebusiness',
+    customerQuestion: 'What the f*ck is wrong with you?',
+    authorized: true
+  } }, res)
+
+  assert.equal(res.statusCode, 400)
+  assert.match(res.body.error, /without abusive or offensive language/i)
+  assert.equal((await store.list()).length, 0)
+  assert.equal(notifications.length, 0)
+})
+
 test('facebook audit endpoint queues an authorized request and notifies Telegram', async () => {
   const store = new MemoryAuditStore()
   const notifications = []
