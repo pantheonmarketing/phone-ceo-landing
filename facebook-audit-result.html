@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Facebook Audit Report | EngbrainAI</title>
+    <style>
+      :root {
+        --ink: #f6f7fb;
+        --muted: #b6bfd3;
+        --panel: #11192c;
+        --line: #2a3650;
+        --orange: #ff6a3d;
+        --green: #48d597;
+        --red: #ff5c73;
+        --info: #91a7e8;
+        --surface: #0a1120;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Inter, Arial, sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 15% 0, #29396a 0, transparent 34%), #080d19;
+      }
+      main {
+        width: min(920px, calc(100% - 30px));
+        margin: 0 auto;
+        padding: 42px 0 70px;
+      }
+      .eyebrow {
+        color: var(--info);
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 20px;
+        margin: 12px 0 26px;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(34px, 6vw, 58px);
+        line-height: 1;
+        letter-spacing: -0.05em;
+      }
+      .status {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 7px 11px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+      .status.waiting,
+      .status.starting,
+      .status.message_sent {
+        color: var(--orange);
+        border-color: #6a442f;
+        background: #2c1d19;
+      }
+      .status.passed {
+        color: var(--green);
+        border-color: #286b50;
+        background: #0d241c;
+      }
+      .status.failed,
+      .status.error {
+        color: var(--red);
+        border-color: #6a342b;
+        background: #2d1718;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1.05fr 0.95fr;
+        gap: 18px;
+      }
+      .card {
+        background: rgba(17, 25, 44, 0.93);
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        padding: 23px;
+        box-shadow: 0 18px 55px rgba(0, 0, 0, 0.2);
+      }
+      .clock {
+        margin: 15px 0 4px;
+        font-size: clamp(34px, 8vw, 64px);
+        font-weight: 900;
+        letter-spacing: -0.05em;
+      }
+      .muted {
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      .grade {
+        font-size: 90px;
+        font-weight: 900;
+        line-height: 1;
+      }
+      .grade.A,
+      .grade.B {
+        color: var(--green);
+      }
+      .grade.F {
+        color: var(--red);
+      }
+      .rule {
+        margin-top: 17px;
+        padding: 13px;
+        border: 1px solid #6a342b;
+        border-radius: 12px;
+        background: #2d1718;
+        color: #ffd0c5;
+        font-weight: 700;
+      }
+      .timeline {
+        margin: 19px 0 0 7px;
+        padding-left: 23px;
+        border-left: 2px solid var(--line);
+      }
+      .event {
+        position: relative;
+        padding: 0 0 23px;
+      }
+      .event:before {
+        content: "";
+        position: absolute;
+        left: -29px;
+        top: 3px;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--info);
+        box-shadow: 0 0 0 4px var(--panel);
+      }
+      .event:last-child:before {
+        background: var(--orange);
+      }
+      .event strong {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      .event time {
+        float: right;
+        color: var(--muted);
+        font:
+          11px ui-monospace,
+          Consolas,
+          monospace;
+      }
+      .event p {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .reply {
+        margin-top: 10px;
+        padding: 13px;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        background: var(--surface);
+        white-space: pre-wrap;
+        line-height: 1.45;
+      }
+      .error {
+        color: #ffbac4;
+      }
+      .hidden {
+        display: none;
+      }
+      @media (max-width: 720px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        .header {
+          display: block;
+        }
+        .status {
+          display: inline-block;
+          margin-top: 14px;
+        }
+        .card {
+          padding: 19px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="eyebrow">EngbrainAI · Authorized Lost Customer Audit</div>
+      <header class="header">
+        <div>
+          <h1 id="business">Loading your audit…</h1>
+          <p id="audit-id" class="muted"></p>
+        </div>
+        <span id="status" class="status">Connecting</span>
+      </header>
+      <div id="error" class="card error hidden"></div>
+      <div id="report" class="grid hidden">
+        <section class="card">
+          <div class="eyebrow">Two-minute response clock</div>
+          <div id="clock" class="clock">Not started</div>
+          <p id="clock-note" class="muted">
+            The clock starts only after the test message is confirmed sent.
+          </p>
+          <div id="result" class="hidden">
+            <div id="grade" class="grade"></div>
+            <h2 id="result-label"></h2>
+            <p id="behavior" class="muted"></p>
+          </div>
+          <div id="failure" class="hidden">
+            <h2>Audit could not be completed</h2>
+            <p id="failure-message" class="error"></p>
+            <p class="muted">
+              This is an operational failure, not an F. No score is assigned
+              unless the audit message was actually sent and the two-minute
+              clock ran.
+            </p>
+          </div>
+          <div class="rule">
+            Hard rule: no useful customer answer by 2:00 = F. A generic
+            automatic acknowledgement alone does not pass.
+          </div>
+        </section>
+        <section class="card">
+          <div class="eyebrow">Live audit trail</div>
+          <div id="timeline" class="timeline"></div>
+          <div id="replies"></div>
+        </section>
+      </div>
+    </main>
+    <script>
+      const params = new URLSearchParams(location.hash.slice(1));
+      const auditId = params.get("auditId");
+      const token = params.get("token");
+      let audit = null;
+      const show = (id, visible) =>
+        document.querySelector(id).classList.toggle("hidden", !visible);
+      const fmt = (value) =>
+        value
+          ? new Date(value).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            })
+          : "—";
+      function render() {
+        if (!audit) return;
+        document.querySelector("#business").textContent = audit.businessName;
+        document.querySelector("#audit-id").textContent =
+          `Audit ID: ${audit.auditId}`;
+        const status = document.querySelector("#status");
+        status.textContent = audit.status.replaceAll("_", " ");
+        status.className = `status ${audit.status}`;
+        show("#report", true);
+        show("#error", false);
+        const result = Boolean(audit.score);
+        show("#result", result);
+        show("#failure", audit.status === "error");
+        if (result) {
+          const grade = document.querySelector("#grade");
+          grade.textContent = audit.score.grade;
+          grade.className = `grade ${audit.score.grade}`;
+          document.querySelector("#result-label").textContent =
+            audit.score.label;
+          document.querySelector("#behavior").textContent =
+            audit.score.behaviorBand &&
+            audit.score.behaviorBand !== audit.score.grade
+              ? `${audit.score.behaviorBand} behavior diagnostic: ${audit.score.behaviorLabel}`
+              : audit.score.behaviorLabel || "";
+        }
+        if (audit.error)
+          document.querySelector("#failure-message").textContent =
+            `${audit.error.code}: ${audit.error.message}`;
+        document.querySelector("#timeline").replaceChildren(
+          ...(audit.events || []).map((event) => {
+            const item = document.createElement("article");
+            item.className = "event";
+            const title = document.createElement("strong");
+            title.textContent = event.type.replaceAll("_", " ");
+            const time = document.createElement("time");
+            time.textContent = fmt(event.at);
+            const note = document.createElement("p");
+            note.textContent =
+              event.message || event.label || event.status || "Recorded";
+            item.append(title, time, note);
+            return item;
+          }),
+        );
+        const replies = document.querySelector("#replies");
+        replies.replaceChildren();
+        if (audit.replies?.length) {
+          const heading = document.createElement("div");
+          heading.className = "eyebrow";
+          heading.style.marginTop = "10px";
+          heading.textContent = "Detected replies";
+          replies.append(
+            heading,
+            ...audit.replies.map((reply) => {
+              const item = document.createElement("div");
+              item.className = "reply";
+              item.textContent = reply.isLate
+                ? `Late reply (${reply.secondsAfterDeadline || "?"} seconds after deadline; grade unchanged)\n${reply.text}`
+                : reply.text;
+              return item;
+            }),
+          );
+        }
+        renderClock();
+      }
+      function renderClock() {
+        if (!audit) return;
+        const clock = document.querySelector("#clock");
+        const note = document.querySelector("#clock-note");
+        if (!audit.sentAt) {
+          clock.textContent = "Not started";
+          note.textContent =
+            "Queued or preparing. No score can be assigned yet.";
+          return;
+        }
+        if (["passed", "failed", "error"].includes(audit.status)) {
+          clock.textContent = audit.completedAt
+            ? `Finished ${fmt(audit.completedAt)}`
+            : "Finished";
+          note.textContent = `Message sent ${fmt(audit.sentAt)} · deadline ${fmt(audit.deadlineAt)}`;
+          return;
+        }
+        const left = Math.max(
+          0,
+          new Date(audit.deadlineAt).getTime() - Date.now(),
+        );
+        clock.textContent = `${String(Math.floor(left / 60000)).padStart(2, "0")}:${String(Math.floor((left % 60000) / 1000)).padStart(2, "0")}`;
+        note.textContent = `Message sent ${fmt(audit.sentAt)} · useful-answer deadline ${fmt(audit.deadlineAt)}`;
+      }
+      async function refresh() {
+        if (!auditId || !token) {
+          document.querySelector("#error").textContent =
+            "This report link is incomplete. Use the private report link supplied when the audit was queued.";
+          show("#error", true);
+          return;
+        }
+        try {
+          const response = await fetch(
+            `/api/facebook-audit?auditId=${encodeURIComponent(auditId)}`,
+            { cache: "no-store", headers: { "X-Audit-Report-Token": token } },
+          );
+          if (!response.ok)
+            throw new Error(
+              response.status === 404
+                ? "Audit not found or report link is invalid."
+                : "The report is temporarily unavailable.",
+            );
+          audit = await response.json();
+          render();
+        } catch (error) {
+          document.querySelector("#error").textContent = error.message;
+          show("#error", true);
+        }
+      }
+      setInterval(refresh, 2000);
+      setInterval(renderClock, 250);
+      refresh();
+    </script>
+  </body>
+</html>

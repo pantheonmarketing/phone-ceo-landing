@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Controlled Messenger Fixture</title></head>
+<body>
+  <main>
+    <h1>Controlled Audit Fixture</h1>
+    <button type="button" aria-label="Your profile">Account</button>
+    <button type="button" data-audit-action="message">Message</button>
+    <section id="messenger" hidden>
+      <div role="main" aria-label="Messages">
+        <div role="row" data-audit-message data-audit-message-id="fixture-history" data-audit-timestamp="1">Conversation ready</div>
+      </div>
+      <textarea data-audit-composer aria-label="Message" placeholder="Type a message"></textarea>
+    </section>
+  </main>
+  <script>
+    const messenger=document.querySelector('#messenger');const messages=messenger.querySelector('[role="main"]');const composer=document.querySelector('[data-audit-composer]')
+    let fixtureMessageId=0
+    const appendMessage=(text)=>{const message=document.createElement('div');message.setAttribute('role','row');message.setAttribute('data-audit-message','');message.setAttribute('data-audit-message-id',`fixture-${++fixtureMessageId}`);message.setAttribute('data-audit-timestamp',String(Date.now()));message.textContent=text;messages.append(message)}
+    document.querySelector('[data-audit-action="message"]').addEventListener('click',()=>{messenger.hidden=false;composer.focus()})
+    composer.addEventListener('keydown',async event=>{if(event.key!=='Enter'||event.shiftKey)return;event.preventDefault();const text=composer.value.trim();if(!text)return;composer.value='';appendMessage(text);await fetch('/fixture-send',{method:'POST'});setTimeout(()=>appendMessage('Thanks for contacting us. We received your message and will get back to you soon.'),300);setTimeout(()=>appendMessage('Yes, Friday is available for $50. Would you like me to reserve it?'),800)})
+  </script>
+</body>
+</html>
