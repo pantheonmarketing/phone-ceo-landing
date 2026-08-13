@@ -2,6 +2,7 @@ const crypto = require('node:crypto')
 const { classifyFacebookReply, scoreFacebookAudit } = require('../lib/facebook-audit')
 const {
   addEvidence,
+  applyLateReplyObservation,
   applyReplyObservation,
   confirmMessageSent,
   prepareMessageSend,
@@ -10,13 +11,24 @@ const {
 } = require('../lib/facebook-audit-state')
 
 class AuditWorker {
-  constructor({ store, browser, workerId, journal, notifyFinal, now = () => new Date() }) {
+  constructor({
+    store,
+    browser,
+    workerId,
+    journal,
+    notifyFinal,
+    notifyLate,
+    lateReplyWindowMs = 0,
+    now = () => new Date()
+  }) {
     if (!store || !browser) throw new Error('AuditWorker requires a store and browser adapter')
     this.store = store
     this.browser = browser
     this.workerId = workerId || `worker-${crypto.randomBytes(4).toString('hex')}`
     this.journal = journal || { append() {} }
     this.notifyFinal = notifyFinal || (async () => {})
+    this.notifyLate = notifyLate || (async () => {})
+    this.lateReplyWindowMs = Math.max(0, Number(lateReplyWindowMs) || 0)
     this.now = now
   }
 
@@ -60,6 +72,64 @@ class AuditWorker {
         }, this.now()))
       } catch {}
     }
+  }
+
+  async _notifyLateWithoutChangingResult(audit, reply) {
+    try {
+      await this.notifyLate(audit, reply)
+    } catch {
+      try {
+        await this.store.update(audit.auditId, current => recordAuditEvent(current, 'notification_failed', {
+          status: current.status,
+          message: 'Late-reply private notification failed'
+        }, this.now()))
+      } catch {}
+    }
+  }
+
+  async _monitorLateReplies(audit) {
+    if (audit.status !== 'failed' || audit.score?.grade !== 'F' || this.lateReplyWindowMs <= 120000) return audit
+    const lateDeadlineAt = new Date(new Date(audit.sentAt).getTime() + this.lateReplyWindowMs)
+    const monitoringAt = new Date(new Date(audit.completedAt).getTime() + 1)
+    await this.store.update(audit.auditId, current => recordAuditEvent(current, 'late_reply_monitoring', {
+      status: current.status,
+      lateReplyDeadlineAt: lateDeadlineAt.toISOString(),
+      message: 'Result is final; monitoring briefly for useful late replies without changing the grade'
+    }, monitoringAt))
+    try {
+      const observation = await this.browser.observeUntil({
+        audit,
+        deadlineAt: lateDeadlineAt,
+        onReply: async reply => {
+          const receivedAt = new Date(reply.receivedAt || this.now())
+          if (receivedAt.getTime() <= new Date(audit.deadlineAt).getTime()) return { stop: false }
+          const latest = await this.store.get(audit.auditId)
+          const classification = classifyFacebookReply(reply.text, { customerQuestion: latest.customerQuestion })
+          const updated = await this.store.update(audit.auditId, current => applyLateReplyObservation(current, {
+            text: reply.text,
+            receivedAt,
+            classification
+          }))
+          await this._evidence(audit.auditId, classification.isUseful ? 'Useful late reply detected' : 'Late reply detected')
+          await this._notifyLateWithoutChangingResult(await this.store.get(audit.auditId), updated.replies.at(-1))
+          return { stop: classification.isUseful, classification }
+        }
+      })
+      const closedAt = new Date(observation?.observedUntil || lateDeadlineAt)
+      await this.store.update(audit.auditId, current => recordAuditEvent(current, 'late_reply_window_closed', {
+        status: current.status,
+        message: current.replies.some(reply => reply.isLate && reply.classification?.isUseful)
+          ? 'Useful late reply recorded; original two-minute grade unchanged'
+          : 'Late-reply monitoring window closed; original grade unchanged'
+      }, closedAt))
+    } catch (error) {
+      await this.store.update(audit.auditId, current => recordAuditEvent(current, 'late_reply_monitor_error', {
+        status: current.status,
+        code: String(error.code || error.name || 'late_reply_monitor_error').slice(0, 120),
+        message: 'Late-reply monitoring ended early; original two-minute grade unchanged'
+      }, this.now())).catch(() => {})
+    }
+    return this.store.get(audit.auditId)
   }
 
   async processNext() {
@@ -172,7 +242,7 @@ class AuditWorker {
       await this._evidence(auditId, `Audit ${finalStatus}`)
       const withEvidence = await this.store.get(auditId)
       await this._notifyWithoutChangingResult(withEvidence)
-      return withEvidence
+      return this._monitorLateReplies(withEvidence)
     } catch (error) {
       const failed = await this._error(
         auditId,

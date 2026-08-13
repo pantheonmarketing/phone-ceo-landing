@@ -141,6 +141,24 @@ async function notifyFinalTelegram(audit) {
   await sendTelegram(text)
 }
 
+async function notifyLateReplyTelegram(audit, reply) {
+  const timing = Number.isFinite(reply?.secondsAfterDeadline)
+    ? `${reply.secondsAfterDeadline} seconds after the deadline`
+    : 'after the two-minute deadline'
+  const text = [
+    'LATE FACEBOOK AUDIT REPLY',
+    '',
+    `Audit: ${audit.auditId}`,
+    `Business: ${audit.businessName}`,
+    `Original result remains: ${audit.score?.grade || audit.status}`,
+    `Timing: ${timing}`,
+    `Useful: ${reply?.classification?.isUseful ? 'yes' : 'no'}`,
+    '',
+    String(reply?.text || '').slice(0, 2000)
+  ].join('\n')
+  await sendTelegram(text)
+}
+
 let defaultStore
 function getDefaultStore() {
   defaultStore ||= createAuditStoreFromEnv()
@@ -239,6 +257,7 @@ const handler = createHandler()
 module.exports = handler
 module.exports.createHandler = createHandler
 module.exports.notifyFinalTelegram = notifyFinalTelegram
+module.exports.notifyLateReplyTelegram = notifyLateReplyTelegram
 module.exports.notifyTelegram = notifyTelegram
 module.exports.createRateLimiter = createRateLimiter
 module.exports.requestOriginAllowed = requestOriginAllowed

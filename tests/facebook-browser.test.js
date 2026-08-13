@@ -138,6 +138,32 @@ test('observation uses the confirmed sent timestamp as its reply boundary', asyn
   assert.deepEqual(replies, ['Useful reply'])
 })
 
+test('observation processes a whole reply batch before stopping and does not redetect it', async () => {
+  const confirmedAt = Date.now() - 1000
+  const replies = []
+  const browser = new FacebookMessengerBrowser({ profileDirectory: 'test-profile', pollIntervalMs: 1 })
+  browser.sentMessage = 'Audit question'
+  browser.auditId = 'FBA-ABCDEF12'
+  browser.sentMessageEvidence = { id: 'sent-1', timestampMs: confirmedAt }
+  browser.page = { isClosed: () => false, waitForTimeout: async () => {} }
+  browser._collectEntries = async () => [
+    { text: 'The next event is Sunday.', id: 'reply-1', timestampMs: confirmedAt + 1 },
+    { text: 'Would you like one ticket or two?', id: 'reply-2', timestampMs: confirmedAt + 2 }
+  ]
+
+  const observe = () => browser.observeUntil({
+    deadlineAt: new Date(Date.now() + 5),
+    onReply: async reply => {
+      replies.push(reply.text)
+      return { stop: true }
+    }
+  })
+  await observe()
+  await observe()
+
+  assert.deepEqual(replies, ['The next event is Sunday.', 'Would you like one ticket or two?'])
+})
+
 test('openMessenger rejects a redirected Messenger destination', async () => {
   let popupClosed = false
   const source = {
@@ -491,6 +517,30 @@ test('_collectEntries includes Facebook Messenger role articles', async () => {
   await browser._collectEntries(page)
 
   assert.match(requestedSelector, /\[role="article"\]/)
+})
+
+test('_collectEntries gives accessible Messenger bubbles stable first-seen timestamps', async () => {
+  const messageLabel = 'Enter, Message sent 13:38 by AI CEO Bangkok: The next event is Sunday at 10 AM.'
+  const labelNode = { getAttribute: name => name === 'aria-label' ? messageLabel : null }
+  const node = {
+    innerText: 'The next event is Sunday at 10 AM.',
+    textContent: 'The next event is Sunday at 10 AM.',
+    id: '',
+    getAttribute(name) { return name === 'role' ? 'article' : null },
+    matches(selector) { return selector === '[role="article"]' },
+    querySelector(selector) { return selector.includes('aria-label') ? labelNode : null }
+  }
+  const browser = new FacebookMessengerBrowser({ profileDirectory: 'test-profile' })
+  const page = { locator: () => ({ evaluateAll: async callback => callback([node]) }) }
+
+  const first = await browser._collectEntries(page)
+  const second = await browser._collectEntries(page)
+
+  assert.equal(first.length, 1)
+  assert.equal(first[0].text, 'The next event is Sunday at 10 AM.')
+  assert.equal(first[0].id, messageLabel)
+  assert.equal(Number.isFinite(first[0].timestampMs), true)
+  assert.equal(second[0].timestampMs, first[0].timestampMs)
 })
 
 test('selectNewConversationEntries fails closed without post-send timestamps', () => {

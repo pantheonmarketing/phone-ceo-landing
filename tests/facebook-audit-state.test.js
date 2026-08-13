@@ -2,6 +2,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 
 const {
+  applyLateReplyObservation,
   applyReplyObservation,
   confirmMessageSent,
   createAuditRecord,
@@ -152,4 +153,54 @@ test('reply observations preserve first reply and first useful reply', () => {
   assert.equal(audit.observations.autoAcknowledged, true)
   assert.equal(audit.observations.bookingCta, true)
   assert.equal(audit.replies.length, 2)
+})
+
+test('late replies are recorded after a failed deadline without changing the F', () => {
+  let { audit } = record()
+  audit = transitionAudit(audit, 'starting', {}, new Date('2026-08-13T08:00:01.000Z'))
+  audit = prepareMessageSend(audit, 'attempt-1', new Date('2026-08-13T08:00:02.000Z'))
+  audit = confirmMessageSent(audit, 'attempt-1', new Date('2026-08-13T08:00:03.000Z'))
+  audit = transitionAudit(audit, 'waiting', {}, new Date('2026-08-13T08:00:03.100Z'))
+  const score = {
+    grade: 'F',
+    passed: false,
+    label: 'No useful answer within 2 minutes',
+    responseSeconds: null,
+    behaviorBand: 'D',
+    behaviorLabel: 'Channel reachable, but no acknowledgement or useful answer'
+  }
+  audit = transitionAudit(audit, 'failed', { score }, new Date('2026-08-13T08:02:03.000Z'))
+
+  audit = applyLateReplyObservation(audit, {
+    text: 'The next event is Sunday. Which date works best for you?',
+    receivedAt: '2026-08-13T08:08:00.000Z',
+    classification: { isUseful: true, hasQualificationQuestion: true }
+  })
+
+  assert.equal(audit.status, 'failed')
+  assert.equal(audit.score.grade, 'F')
+  assert.equal(audit.replies.length, 1)
+  assert.equal(audit.replies[0].isLate, true)
+  assert.equal(audit.replies[0].timestampSource, 'worker_first_seen')
+  assert.equal(audit.replies[0].timestampPrecision, 'millisecond')
+  assert.equal(audit.firstReplyAt, '2026-08-13T08:08:00.000Z')
+  assert.equal(audit.usefulReplyAt, '2026-08-13T08:08:00.000Z')
+  assert.equal(audit.events.at(-1).type, 'late_reply_detected')
+})
+
+test('late reply recording rejects replies inside the result window or unscored errors', () => {
+  let { audit } = record()
+  audit = transitionAudit(audit, 'starting', {}, new Date('2026-08-13T08:00:01.000Z'))
+  audit = prepareMessageSend(audit, 'attempt-1', new Date('2026-08-13T08:00:02.000Z'))
+  audit = confirmMessageSent(audit, 'attempt-1', new Date('2026-08-13T08:00:03.000Z'))
+  audit = transitionAudit(audit, 'waiting', {}, new Date('2026-08-13T08:00:03.100Z'))
+  audit = transitionAudit(audit, 'failed', {
+    score: { grade: 'F', passed: false, label: 'No useful answer within 2 minutes' }
+  }, new Date('2026-08-13T08:02:03.000Z'))
+
+  assert.throws(() => applyLateReplyObservation(audit, {
+    text: 'Too early',
+    receivedAt: '2026-08-13T08:02:02.999Z',
+    classification: { isUseful: true }
+  }), /after the two-minute deadline/i)
 })

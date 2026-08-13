@@ -133,3 +133,50 @@ test('worker applies the hard F rule after a sent message receives only an auto 
   assert.equal(result.score.grade, 'F')
   assert.equal(result.score.behaviorBand, 'C')
 })
+
+test('worker records a useful late reply without changing the F result', async () => {
+  const store = new MemoryAuditStore()
+  const initial = await queuedAudit(store)
+  const lateNotifications = []
+  let observations = 0
+  const browser = {
+    async openPage() { return { loggedIn: true, dedicatedProfileSelected: true } },
+    async openMessenger() { return { reachable: true } },
+    async captureEvidence() { return null },
+    async sendMessage() { return { sentAt: '2026-08-13T08:00:10.000Z' } },
+    async observeUntil({ onReply }) {
+      observations += 1
+      if (observations === 1) return { observedUntil: '2026-08-13T08:02:10.000Z' }
+      await onReply({
+        text: 'The next event is Sunday at 10 AM. Which date works best for you?',
+        receivedAt: '2026-08-13T08:08:00.000Z'
+      })
+      return { observedUntil: '2026-08-13T08:08:00.000Z' }
+    },
+    async closeAudit() {}
+  }
+  const worker = new AuditWorker({
+    store,
+    browser,
+    workerId: 'worker-test',
+    journal: { append() {} },
+    notifyFinal: async () => {},
+    notifyLate: async (audit, reply) => lateNotifications.push({ audit, reply }),
+    lateReplyWindowMs: 10 * 60 * 1000
+  })
+
+  const result = await worker.processNext()
+
+  assert.equal(result.auditId, initial.auditId)
+  assert.equal(result.status, 'failed')
+  assert.equal(result.score.grade, 'F')
+  assert.equal(result.replies.length, 1)
+  assert.equal(result.replies[0].isLate, true)
+  assert.equal(result.replies[0].classification.isUseful, true)
+  assert.equal(result.replies[0].classification.hasQualificationQuestion, true)
+  assert.equal(lateNotifications.length, 1)
+  assert.equal(observations, 2)
+  assert.deepEqual(result.events.slice(-3).map(event => event.type), [
+    'late_reply_monitoring', 'late_reply_detected', 'late_reply_window_closed'
+  ])
+})

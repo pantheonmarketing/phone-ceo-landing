@@ -7,7 +7,8 @@
     "test": "node --test tests/*.test.js",
     "audit:worker": "node worker/facebook-audit-worker.js",
     "audit:login": "node worker/facebook-login.js",
-    "audit:smoke": "node scripts/facebook-audit-smoke.js"
+    "audit:smoke": "node scripts/facebook-audit-smoke.js",
+    "audit:install-autostart": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install-facebook-audit-autostart.ps1"
   },
   "engines": {
     "node": ">=20"

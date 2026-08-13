@@ -1,6 +1,6 @@
 const path = require('node:path')
 const { createAuditStoreFromEnv } = require('../lib/facebook-audit-store')
-const { notifyFinalTelegram } = require('../api/facebook-audit')
+const { notifyFinalTelegram, notifyLateReplyTelegram } = require('../api/facebook-audit')
 const { AuditWorker } = require('./audit-worker')
 const { createDashboardServer } = require('./dashboard-server')
 const { FacebookMessengerBrowser } = require('./facebook-messenger-browser')
@@ -31,7 +31,14 @@ async function main() {
     executablePath: process.env.FACEBOOK_AUDIT_EXECUTABLE_PATH || '',
     headless: process.env.FACEBOOK_AUDIT_HEADLESS === 'true'
   })
-  const worker = new AuditWorker({ store, browser, journal, notifyFinal: notifyFinalTelegram })
+  const worker = new AuditWorker({
+    store,
+    browser,
+    journal,
+    notifyFinal: notifyFinalTelegram,
+    notifyLate: notifyLateReplyTelegram,
+    lateReplyWindowMs: Number(process.env.FACEBOOK_AUDIT_LATE_REPLY_MS || 10 * 60 * 1000)
+  })
   const controller = new AuditWorkerController({
     worker,
     pollIntervalMs: Number(process.env.FACEBOOK_AUDIT_POLL_MS || 3000)

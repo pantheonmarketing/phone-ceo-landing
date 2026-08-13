@@ -31,6 +31,8 @@ This split keeps the hard two-minute F rule authoritative while preserving the r
 2. Double-click `Start Facebook Audit Agent.vbs`. The private dashboard opens and the agent begins watching the queue. The worker fails safely if its browser adapter does not report that the dedicated profile was selected; it never treats that signal as account-identity verification.
 3. Leave the Windows machine signed in. New authorized form submissions are picked up automatically; no command needs to be run per audit.
 
+The production workstation also uses the per-user scheduled task `Phone CEO Facebook Audit Worker`. It starts at Windows login, runs hidden, and Task Scheduler restarts it after failures. The local dashboard remains available at `http://127.0.0.1:4317/` without opening a browser window automatically.
+
 Before the production form is deployed, the same lead form and private report are available through the running local agent at `http://127.0.0.1:4317/facebook-audit.html`. This route is loopback-only, uses the same durable queue, and still requires the authorization checkbox. It lets the real acceptance test run without posting to an outdated production endpoint.
 
 The browser profile defaults to the git-ignored `data/facebook-audit-browser-profile` directory, so it is separate from the normal Facebook browser session without requiring configuration.
@@ -89,6 +91,7 @@ If Facebook changes its UI, requires a checkpoint, blocks the account, removes M
 
 - Pause/resume controls exist only on the local dashboard.
 - The worker processes one audit at a time.
+- An F result is final at two minutes. The same browser continues monitoring for a useful late reply for ten minutes from send; late replies are labelled and notified separately without changing the grade.
 - The local crash journal stores only audit/send identifiers and timestamps, never message text or credentials.
 - Vercel Blob writes use ETag conditions so two worker instances cannot claim the same queued audit.
 - Facebook selectors use visible accessibility roles and conservative fallbacks. There is no CAPTCHA bypass or anti-detection behavior.

@@ -127,6 +127,8 @@ class FacebookMessengerBrowser {
     this.targetPageUrl = ''
     this.sentMessageEvidence = null
     this.expectedMessengerDestination = null
+    this.entryFirstSeenAt = new Map()
+    this.seenConversationEntryIds = new Set()
   }
 
   async launch() {
@@ -153,6 +155,8 @@ class FacebookMessengerBrowser {
           this.targetPageUrl = ''
           this.sentMessageEvidence = null
           this.expectedMessengerDestination = null
+          this.entryFirstSeenAt = new Map()
+          this.seenConversationEntryIds = new Set()
         })
       }
     } catch {
@@ -175,6 +179,8 @@ class FacebookMessengerBrowser {
 
   async openPage(audit) {
     const context = await this.launch()
+    this.entryFirstSeenAt = new Map()
+    this.seenConversationEntryIds = new Set()
     this.auditId = audit.auditId
     this.targetPageUrl = audit.pageUrl
     this.page = await context.newPage()
@@ -268,12 +274,24 @@ class FacebookMessengerBrowser {
 
   async _collectEntries(page = this.page) {
     try {
-      return await page.locator('[data-audit-message], [role="article"], [role="main"] [role="row"], [aria-label*="Messages" i] [role="row"]').evaluateAll(nodes => {
+      const entries = await page.locator('[data-audit-message], [role="article"], [role="main"] [role="row"], [aria-label*="Messages" i] [role="row"]').evaluateAll(nodes => {
         const unique = new Map()
+        const occurrences = new Map()
         for (const node of nodes) {
-          const text = String(node.innerText || node.textContent || '').replace(/\s+/g, ' ').trim()
+          const ownLabel = String(node.getAttribute('aria-label') || '')
+          const messageLabelNode = /message (?:sent|received).+ by .+:/i.test(ownLabel)
+            ? node
+            : node.querySelector('[aria-label*="Message sent" i], [aria-label*="Message received" i]')
+          const messageLabel = String(messageLabelNode?.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim()
+          if (node.matches('[role="article"]') && !messageLabel) continue
+          let text = String(node.innerText || node.textContent || '').replace(/\s+/g, ' ').trim()
+          const labelledBody = messageLabel.match(/message (?:sent|received).+? by [^:]+:\s*(.+)$/i)
+          if (labelledBody?.[1]) text = labelledBody[1].trim()
           if (!text) continue
-          const id = node.getAttribute('data-audit-message-id') || node.getAttribute('data-message-id') || node.getAttribute('data-id') || node.id || ''
+          const rawId = node.getAttribute('data-audit-message-id') || node.getAttribute('data-message-id') || node.getAttribute('data-id') || node.id || messageLabel || ''
+          const occurrence = (occurrences.get(rawId || text) || 0) + 1
+          occurrences.set(rawId || text, occurrence)
+          const id = rawId ? `${rawId}${occurrence > 1 ? `#${occurrence}` : ''}` : ''
           const timestampNode = node.matches('time[datetime], [data-timestamp], [data-utime]')
             ? node
             : node.querySelector('time[datetime], [data-timestamp], [data-utime]')
@@ -288,9 +306,24 @@ class FacebookMessengerBrowser {
             if (Number.isFinite(timestampMs) && timestampMs < 100000000000) timestampMs *= 1000
           }
           const key = id || `${text}:${timestampMs}`
-          if (!unique.has(key)) unique.set(key, { text, id, timestampMs: Number.isFinite(timestampMs) ? timestampMs : null })
+          if (!unique.has(key)) unique.set(key, {
+            text,
+            id,
+            timestampMs: Number.isFinite(timestampMs) ? timestampMs : null,
+            messageEvidence: Boolean(messageLabel)
+          })
         }
         return [...unique.values()]
+      })
+      const observedAtMs = Date.now()
+      return entries.map(entry => {
+        let timestampMs = entry.timestampMs
+        if (!Number.isFinite(timestampMs) && entry.messageEvidence) {
+          const identity = entryIdentity(entry)
+          if (!this.entryFirstSeenAt.has(identity)) this.entryFirstSeenAt.set(identity, observedAtMs)
+          timestampMs = this.entryFirstSeenAt.get(identity)
+        }
+        return { text: entry.text, id: entry.id, timestampMs: Number.isFinite(timestampMs) ? timestampMs : null }
       })
     } catch (error) {
       throw Object.assign(new Error('The Messenger conversation could not be read'), {
@@ -445,7 +478,7 @@ class FacebookMessengerBrowser {
       throw Object.assign(new Error('The conversation did not provide reliable post-send evidence'), { code: 'conversation_post_send_evidence_unavailable' })
     }
     const deadlineMs = new Date(deadlineAt).getTime()
-    const seen = new Set()
+    const seen = this.seenConversationEntryIds
     while (Date.now() <= deadlineMs) {
       if (!this.page || this.page.isClosed()) throw Object.assign(new Error('Messenger page closed during observation'), { code: 'messenger_closed' })
       const entries = selectNewConversationEntries({
@@ -456,11 +489,15 @@ class FacebookMessengerBrowser {
         seen,
         minTimestampMs: this.sentMessageEvidence.timestampMs
       })
+      let stopRequested = false
+      let lastReplyAt = null
       for (const text of entries) {
         const receivedAt = new Date().toISOString()
+        lastReplyAt = receivedAt
         const result = await onReply({ text, receivedAt })
-        if (result?.stop) return { observedUntil: receivedAt }
+        stopRequested ||= Boolean(result?.stop)
       }
+      if (stopRequested) return { observedUntil: lastReplyAt }
       await this.page.waitForTimeout(Math.min(this.pollIntervalMs, Math.max(1, deadlineMs - Date.now())))
     }
     return { observedUntil: new Date(Math.max(Date.now(), deadlineMs)).toISOString() }
@@ -487,6 +524,8 @@ class FacebookMessengerBrowser {
     this.targetPageUrl = ''
     this.expectedMessengerDestination = null
     this.sentMessageEvidence = null
+    this.entryFirstSeenAt = new Map()
+    this.seenConversationEntryIds = new Set()
   }
 
   async shutdown() {
