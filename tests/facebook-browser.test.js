@@ -117,14 +117,14 @@ test('observation uses the confirmed sent timestamp as its reply boundary', asyn
 test('openMessenger rejects a redirected Messenger destination', async () => {
   let popupClosed = false
   const source = {
-    url: () => 'https://www.facebook.com/example',
+    url: () => 'https://www.facebook.com/profile.php?id=123',
     locator: selector => ({
       async count() { return selector === '[data-audit-action="message"]' ? 1 : 0 },
       nth() {
         return {
           async isVisible() { return true },
           async getAttribute(name) {
-            if (name === 'href') return 'https://www.messenger.com/t/intended'
+            if (name === 'href') return 'https://www.messenger.com/t/123'
             if (name === 'data-audit-page-url') return source.url()
             return null
           },
@@ -152,6 +152,38 @@ test('openMessenger rejects a redirected Messenger destination', async () => {
   assert.equal(popupClosed, true)
 })
 
+test('openMessenger rejects a thread whose DOM metadata claims the target Page', async () => {
+  let clicked = false
+  const source = {
+    url: () => 'https://www.facebook.com/profile.php?id=123',
+    locator: selector => ({
+      async count() { return selector === '[data-audit-action="message"]' ? 1 : 0 },
+      nth() {
+        return {
+          async isVisible() { return true },
+          async getAttribute(name) {
+            if (name === 'href') return 'https://www.messenger.com/t/456'
+            if (name === 'data-audit-page-url') return source.url()
+            return null
+          },
+          async click() { clicked = true }
+        }
+      }
+    }),
+    getByRole: () => ({ count: async () => 0 })
+  }
+  const browser = new FacebookMessengerBrowser({ profileDirectory: 'test-profile' })
+  browser.page = source
+  browser.targetPageUrl = source.url()
+  browser.context = { pages: () => [source] }
+  browser._findComposer = async () => null
+
+  const result = await browser.openMessenger()
+
+  assert.equal(result.reachable, false)
+  assert.equal(clicked, false)
+})
+
 test('openMessenger rejects an unbound Messenger thread even when its URL is stable', async () => {
   let clicked = false
   const source = {
@@ -161,7 +193,11 @@ test('openMessenger rejects an unbound Messenger thread even when its URL is sta
       nth() {
         return {
           async isVisible() { return true },
-          async getAttribute(name) { return name === 'href' ? 'https://www.messenger.com/t/another-page' : null },
+          async getAttribute(name) {
+            if (name === 'href') return 'https://www.messenger.com/t/another-page'
+            if (name === 'data-audit-page-url') return source.url()
+            return null
+          },
           async click() { clicked = true }
         }
       }
@@ -404,6 +440,17 @@ test('selectNewConversationEntries fails closed without post-send timestamps', (
     seen: new Set(),
     minTimestampMs: 1000
   }), ['Useful reply'])
+})
+
+test('selectNewConversationEntries accepts repeated text when its post-send identity is new', () => {
+  assert.deepEqual(selectNewConversationEntries({
+    baseline: new Set(['A useful answer']),
+    current: [{ text: 'A useful answer', id: 'reply-2', timestampMs: 1100 }],
+    sentMessage: 'Audit question',
+    auditId: 'FBA-ABCDEF12',
+    seen: new Set(),
+    minTimestampMs: 1000
+  }), ['A useful answer'])
 })
 
 test('selectNewConversationEntries ignores baseline and the worker message without losing new replies', () => {

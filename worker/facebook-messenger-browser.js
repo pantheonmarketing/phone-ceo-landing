@@ -25,12 +25,16 @@ function selectNewConversationEntries({ baseline, current, sentMessage, auditId,
   for (const raw of current) {
     const entry = normalizeEntry(raw)
     const timestampMs = entryTimestampMs(raw)
-    if (!entry || entry.length > 3000 || baseline.has(entry) || seen.has(entryIdentity(raw))) continue
+    if (!entry || entry.length > 3000 || seen.has(entryIdentity(raw))) continue
     if (entry === sent || (id && entry.toLowerCase().includes(id))) continue
     if (Number.isFinite(minTimestampMs) && !Number.isFinite(timestampMs)) {
       throw Object.assign(new Error('The conversation did not provide reliable post-send evidence'), { code: 'conversation_post_send_evidence_unavailable' })
     }
-    if (Number.isFinite(minTimestampMs) && timestampMs <= minTimestampMs) continue
+    if (Number.isFinite(minTimestampMs)) {
+      if (timestampMs <= minTimestampMs) continue
+    } else if (baseline.has(entry)) {
+      continue
+    }
     seen.add(entryIdentity(raw))
     found.push(entry)
   }
@@ -82,23 +86,16 @@ function facebookPageId(url) {
   return /^\d+$/.test(id || '') ? id : null
 }
 
-function messengerBelongsToPage(messengerUrl, pageUrl, pageIdentityUrl = '', pageIdentityId = '') {
+function messengerBelongsToPage(messengerUrl, pageUrl) {
   let targetPage
   try {
     targetPage = new URL(pageUrl)
   } catch {
     return false
   }
-  if (pageIdentityUrl) {
-    try {
-      const identity = new URL(pageIdentityUrl)
-      if (identity.protocol === 'https:' && FACEBOOK_HOSTS.has(identity.hostname.toLowerCase()) && sameFacebookPageTarget(pageUrl, identity)) return true
-    } catch {}
-  }
   const targetId = facebookPageId(targetPage)
-  const identityId = String(pageIdentityId || '').trim()
   const threadId = messengerThreadId(messengerUrl)
-  return Boolean(threadId && targetId && threadId === targetId) || Boolean(threadId && /^\d+$/.test(identityId) && threadId === identityId)
+  return Boolean(threadId && targetId && threadId === targetId)
 }
 
 class FacebookMessengerBrowser {
@@ -301,11 +298,7 @@ class FacebookMessengerBrowser {
       const destination = new URL(href, this.page.url())
       if (destination.protocol !== 'https:' || (!FACEBOOK_HOSTS.has(destination.hostname.toLowerCase()) && !MESSENGER_HOSTS.has(destination.hostname.toLowerCase()))) return false
       if (isMessengerDestination(destination)) {
-        let pageIdentityUrl = await Promise.resolve(candidate.getAttribute('data-audit-page-url')).catch(() => '')
-        if (!pageIdentityUrl) pageIdentityUrl = await Promise.resolve(candidate.getAttribute('data-page-url')).catch(() => '')
-        let pageIdentityId = await Promise.resolve(candidate.getAttribute('data-audit-page-id')).catch(() => '')
-        if (!pageIdentityId) pageIdentityId = await Promise.resolve(candidate.getAttribute('data-page-id')).catch(() => '')
-        if (!messengerBelongsToPage(destination, this.targetPageUrl, pageIdentityUrl, pageIdentityId)) return false
+        if (!messengerBelongsToPage(destination, this.targetPageUrl)) return false
       } else if (!sameFacebookPageTarget(this.targetPageUrl, destination)) {
         return false
       }
