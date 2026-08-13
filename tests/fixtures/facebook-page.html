@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Controlled Messenger Fixture</title></head>
+<body>
+  <main>
+    <h1>Controlled Audit Fixture</h1>
+    <button type="button" data-audit-action="message">Message</button>
+    <section id="messenger" hidden>
+      <div role="main" aria-label="Messages">
+        <div role="row" data-audit-message>Conversation ready</div>
+      </div>
+      <textarea data-audit-composer aria-label="Message" placeholder="Type a message"></textarea>
+    </section>
+  </main>
+  <script>
+    const messenger=document.querySelector('#messenger');const messages=messenger.querySelector('[role="main"]');const composer=document.querySelector('[data-audit-composer]')
+    document.querySelector('[data-audit-action="message"]').addEventListener('click',()=>{messenger.hidden=false;composer.focus()})
+    composer.addEventListener('keydown',async event=>{if(event.key!=='Enter'||event.shiftKey)return;event.preventDefault();const text=composer.value.trim();if(!text)return;composer.value='';const sent=document.createElement('div');sent.setAttribute('role','row');sent.setAttribute('data-audit-message','');sent.textContent=text;messages.append(sent);await fetch('/fixture-send',{method:'POST'});setTimeout(()=>{const auto=document.createElement('div');auto.setAttribute('role','row');auto.setAttribute('data-audit-message','');auto.textContent='Thanks for contacting us. We received your message and will get back to you soon.';messages.append(auto)},300);setTimeout(()=>{const reply=document.createElement('div');reply.setAttribute('role','row');reply.setAttribute('data-audit-message','');reply.textContent='Yes, Friday is available for $50. Would you like me to reserve it?';messages.append(reply)},800)})
+  </script>
+</body>
+</html>
