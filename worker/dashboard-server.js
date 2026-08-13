@@ -2,9 +2,12 @@ const fs = require('node:fs/promises')
 const http = require('node:http')
 const path = require('node:path')
 const { URL } = require('node:url')
+const { createHandler: createAuditApiHandler, notifyTelegram } = require('../api/facebook-audit')
 const { recordAuditEvent } = require('../lib/facebook-audit-state')
 
 const DASHBOARD_PATH = path.join(__dirname, 'dashboard.html')
+const AUDIT_FORM_PATH = path.join(__dirname, '..', 'facebook-audit.html')
+const AUDIT_RESULT_PATH = path.join(__dirname, '..', 'facebook-audit-result.html')
 
 function sanitizeAudit(record) {
   if (!record) return null
@@ -19,6 +22,39 @@ function sendJson(res, status, body) {
     'x-content-type-options': 'nosniff'
   })
   res.end(JSON.stringify(body))
+}
+
+async function sendHtmlFile(res, filePath) {
+  const html = await fs.readFile(filePath, 'utf8')
+  res.writeHead(200, {
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'no-store',
+    'x-frame-options': 'DENY',
+    'x-content-type-options': 'nosniff',
+    'content-security-policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
+  })
+  res.end(html)
+}
+
+function createNodeApiResponse(res) {
+  let statusCode = 200
+  const adapter = {
+    status(value) {
+      statusCode = value
+      return adapter
+    },
+    setHeader(name, value) {
+      res.setHeader(name, value)
+      return adapter
+    },
+    json(body) {
+      res.statusCode = statusCode
+      if (!res.hasHeader('content-type')) res.setHeader('content-type', 'application/json; charset=utf-8')
+      res.end(JSON.stringify(body))
+      return adapter
+    }
+  }
+  return adapter
 }
 
 async function readJson(req) {
@@ -59,10 +95,11 @@ function localRequest(req) {
   }
 }
 
-function createDashboardServer({ store, controller, host = '127.0.0.1', port = 4317 }) {
+function createDashboardServer({ store, controller, host = '127.0.0.1', port = 4317, notifyInitial = notifyTelegram }) {
   if (!isLoopbackHost(host)) throw new Error('Dashboard host must be loopback-only')
   const streams = new Set()
   let dashboardHtml
+  const auditApiHandler = createAuditApiHandler({ store, notifyTelegram: notifyInitial })
 
   function publish(event, data) {
     const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
@@ -89,6 +126,20 @@ function createDashboardServer({ store, controller, host = '127.0.0.1', port = 4
           'content-security-policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
         })
         return res.end(dashboardHtml)
+      }
+
+      if (req.method === 'GET' && requestUrl.pathname === '/facebook-audit.html') {
+        return sendHtmlFile(res, AUDIT_FORM_PATH)
+      }
+
+      if (req.method === 'GET' && requestUrl.pathname === '/facebook-audit-result.html') {
+        return sendHtmlFile(res, AUDIT_RESULT_PATH)
+      }
+
+      if (requestUrl.pathname === '/api/facebook-audit' && ['GET', 'POST', 'OPTIONS'].includes(req.method)) {
+        req.query = Object.fromEntries(requestUrl.searchParams)
+        if (req.method === 'POST') req.body = await readJson(req)
+        return auditApiHandler(req, createNodeApiResponse(res))
       }
 
       if (req.method === 'GET' && requestUrl.pathname === '/api/audits') {

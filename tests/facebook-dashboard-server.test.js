@@ -85,3 +85,63 @@ test('dashboard cannot bind publicly and manual review preserves conservative fl
   assert.equal(updated.replies[0].classification.isAutoAcknowledgement, true)
   assert.equal(updated.observations.clearNextAction, false)
 })
+
+test('local dashboard serves the existing audit form and queues only authorized submissions', async t => {
+  const store = new MemoryAuditStore()
+  const notifications = []
+  const controller = {
+    getStatus: () => ({ state: 'idle', paused: false, lastPollAt: null, activeAuditId: null }),
+    on() {},
+    off() {}
+  }
+  const dashboard = createDashboardServer({
+    store,
+    controller,
+    port: 0,
+    notifyInitial: async audit => notifications.push(audit.auditId)
+  })
+  const started = await dashboard.start()
+  t.after(() => dashboard.stop())
+
+  const formResponse = await fetch(`${started.url}facebook-audit.html`)
+  assert.equal(formResponse.status, 200)
+  assert.match(await formResponse.text(), /Lost Customer Audit/)
+
+  const unauthorizedResponse = await fetch(`${started.url}api/facebook-audit`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      businessName: 'Local Test Business',
+      pageUrl: 'https://facebook.com/localtestbusiness',
+      customerQuestion: 'When is the next event?',
+      authorized: false
+    })
+  })
+  assert.equal(unauthorizedResponse.status, 400)
+  assert.equal((await store.list()).length, 0)
+
+  const authorizedResponse = await fetch(`${started.url}api/facebook-audit`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      businessName: 'Local Test Business',
+      pageUrl: 'https://facebook.com/localtestbusiness',
+      customerQuestion: 'When is the next event?',
+      authorized: true
+    })
+  })
+  assert.equal(authorizedResponse.status, 200)
+  const queued = await authorizedResponse.json()
+  assert.match(queued.auditId, /^FBA-[A-F0-9]{8}$/)
+  assert.equal(notifications.length, 1)
+  assert.deepEqual(notifications, [queued.auditId])
+  assert.equal((await store.list()).length, 1)
+
+  const resultPageResponse = await fetch(`${started.url}facebook-audit-result.html`)
+  assert.equal(resultPageResponse.status, 200)
+  assert.match(await resultPageResponse.text(), /Audit Report/i)
+
+  const reportResponse = await fetch(`${started.url}api/facebook-audit?auditId=${queued.auditId}&token=${queued.reportToken}`)
+  assert.equal(reportResponse.status, 200)
+  assert.equal((await reportResponse.json()).auditId, queued.auditId)
+})

@@ -31,6 +31,8 @@ This split keeps the hard two-minute F rule authoritative while preserving the r
 2. Double-click `Start Facebook Audit Agent.vbs`. The private dashboard opens and the agent begins watching the queue. The worker fails safely if its browser adapter does not report that the dedicated profile was selected; it never treats that signal as account-identity verification.
 3. Leave the Windows machine signed in. New authorized form submissions are picked up automatically; no command needs to be run per audit.
 
+Before the production form is deployed, the same lead form and private report are available through the running local agent at `http://127.0.0.1:4317/facebook-audit.html`. This route is loopback-only, uses the same durable queue, and still requires the authorization checkbox. It lets the real acceptance test run without posting to an outdated production endpoint.
+
 The browser profile defaults to the git-ignored `data/facebook-audit-browser-profile` directory, so it is separate from the normal Facebook browser session without requiring configuration.
 
 ## Technical setup and troubleshooting
