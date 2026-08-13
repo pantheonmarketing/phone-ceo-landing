@@ -61,7 +61,43 @@ test('errors before a send stay unscored and cannot be marked failed', () => {
   const view = publicAuditView(audit, reportToken)
   assert.equal(view.status, 'error')
   assert.equal(view.grade, null)
+  assert.equal(view.score, null)
   assert.equal(view.error.code, 'facebook_login_required')
+})
+
+test('public report view adds a numeric score without changing the stored hard grade', () => {
+  let { audit, reportToken } = record()
+  audit = transitionAudit(audit, 'starting', {}, new Date('2026-08-13T08:00:01.000Z'))
+  audit = prepareMessageSend(audit, 'attempt-1', new Date('2026-08-13T08:00:02.000Z'))
+  audit = confirmMessageSent(audit, 'attempt-1', new Date('2026-08-13T08:00:03.000Z'))
+  audit = transitionAudit(audit, 'waiting', {}, new Date('2026-08-13T08:00:03.100Z'))
+  audit = applyReplyObservation(audit, {
+    text: 'Yes, it is available. Would you like to secure your spot?',
+    receivedAt: '2026-08-13T08:01:11.000Z',
+    classification: {
+      isUseful: true,
+      hasQualificationQuestion: true,
+      hasBookingCta: false,
+      hasClearNextAction: false
+    }
+  })
+  audit = transitionAudit(audit, 'passed', {
+    score: {
+      grade: 'B',
+      passed: true,
+      label: 'Useful answer in 68 seconds',
+      responseSeconds: 68,
+      behaviorBand: 'B',
+      behaviorLabel: 'Useful answer between 61 and 120 seconds'
+    }
+  }, new Date('2026-08-13T08:01:11.000Z'))
+
+  const view = publicAuditView(audit, reportToken)
+  assert.equal(view.grade, 'B')
+  assert.equal(view.score.grade, 'B')
+  assert.equal(view.score.numericScore, 89)
+  assert.equal(view.score.numericBreakdown.aGradeGapSeconds, 8)
+  assert.equal(audit.score.numericScore, undefined)
 })
 
 test('a visually confirmed ambiguous send can be reconciled conservatively after its deadline', () => {
@@ -120,10 +156,10 @@ test('ambiguous-send reconciliation rejects missing proof or an observation befo
 
 test('reply observations cannot fabricate a reply before the confirmed send', () => {
   let { audit } = record()
-  audit = transitionAudit(audit, 'starting')
-  audit = prepareMessageSend(audit, 'attempt-1')
+  audit = transitionAudit(audit, 'starting', {}, new Date('2026-08-13T08:00:01.000Z'))
+  audit = prepareMessageSend(audit, 'attempt-1', new Date('2026-08-13T08:00:02.000Z'))
   audit = confirmMessageSent(audit, 'attempt-1', new Date('2026-08-13T08:00:03.000Z'))
-  audit = transitionAudit(audit, 'waiting')
+  audit = transitionAudit(audit, 'waiting', {}, new Date('2026-08-13T08:00:03.100Z'))
   assert.throws(() => applyReplyObservation(audit, {
     text: 'Reply',
     receivedAt: '2026-08-13T08:00:02.000Z',
