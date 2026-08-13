@@ -9,6 +9,7 @@ const {
   recordAuditEvent
 } = require('../lib/facebook-audit-state')
 const { createAuditStoreFromEnv } = require('../lib/facebook-audit-store')
+const { safeTelegramErrorCode, sendTelegram } = require('../lib/telegram-notifier')
 
 const MAX_REQUEST_BYTES = 16 * 1024
 const DEFAULT_POST_LIMIT = 5
@@ -96,18 +97,6 @@ function requestTooLarge(body) {
   } catch {
     return true
   }
-}
-
-async function sendTelegram(text) {
-  const token = process.env.TELEGRAM_BOT_TOKEN
-  const chatId = process.env.TELEGRAM_CHAT_ID
-  if (!token || !chatId) throw new Error('Audit notifications are not configured')
-  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true })
-  })
-  if (!response.ok) throw new Error('Telegram notification failed')
 }
 
 async function notifyTelegram(audit) {
@@ -228,11 +217,13 @@ function createHandler({ store, notifyTelegram: notify = notifyTelegram, rateLim
     try {
       await notify(request)
     } catch (error) {
+      const notificationCode = safeTelegramErrorCode(error)
       notificationWarning = 'The audit was queued, but the private notification could not be delivered.'
-      console.error('Facebook audit notification failed', { auditId: request.auditId, code: error.code || error.name })
+      console.error('Facebook audit notification failed', { auditId: request.auditId, code: notificationCode })
       try {
         await auditStore.update(request.auditId, current => recordAuditEvent(current, 'notification_failed', {
           status: current.status,
+          code: notificationCode,
           message: 'Initial private notification failed'
         }))
       } catch (updateError) {

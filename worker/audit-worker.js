@@ -1,5 +1,6 @@
 const crypto = require('node:crypto')
 const { classifyFacebookReply, scoreFacebookAudit } = require('../lib/facebook-audit')
+const { safeTelegramErrorCode } = require('../lib/telegram-notifier')
 const {
   addEvidence,
   applyLateReplyObservation,
@@ -68,6 +69,7 @@ class AuditWorker {
       try {
         await this.store.update(audit.auditId, current => recordAuditEvent(current, 'notification_failed', {
           status: current.status,
+          code: safeTelegramErrorCode(error),
           message: 'Final private notification failed'
         }, this.now()))
       } catch {}
@@ -77,10 +79,11 @@ class AuditWorker {
   async _notifyLateWithoutChangingResult(audit, reply) {
     try {
       await this.notifyLate(audit, reply)
-    } catch {
+    } catch (error) {
       try {
         await this.store.update(audit.auditId, current => recordAuditEvent(current, 'notification_failed', {
           status: current.status,
+          code: safeTelegramErrorCode(error),
           message: 'Late-reply private notification failed'
         }, this.now()))
       } catch {}

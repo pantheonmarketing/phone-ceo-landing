@@ -57,3 +57,30 @@ test('website endpoint rejects private targets, abusive language, and missing au
   }
   assert.equal((await store.list()).length, 0)
 })
+
+test('website endpoint stores a safe Telegram failure code without storing private details', async () => {
+  const store = new MemoryAuditStore()
+  const handler = createHandler({
+    store,
+    notifyTelegram: async () => {
+      const error = new Error('private Telegram response text')
+      error.code = 'telegram_http_400_api_400'
+      throw error
+    }
+  })
+  const res = response()
+
+  await handler({ method: 'POST', body: {
+    businessName: 'Website Business',
+    websiteUrl: 'https://example.com',
+    customerQuestion: 'Do you have availability?',
+    authorized: true
+  } }, res)
+
+  assert.equal(res.statusCode, 200)
+  assert.match(res.body.notificationWarning, /could not be delivered/i)
+  const stored = await store.get(res.body.auditId)
+  const failure = stored.events.find(event => event.type === 'notification_failed')
+  assert.equal(failure.code, 'telegram_http_400_api_400')
+  assert.doesNotMatch(JSON.stringify(stored), /private Telegram response text/)
+})
