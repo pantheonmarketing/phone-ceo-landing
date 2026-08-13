@@ -5,6 +5,7 @@ const {
   chooseContactClicks,
   classifyContactHref,
   detectChatProvider,
+  isInspectableFrameUrl,
   isSafeChatLauncher
 } = require('../worker/website-audit-browser')
 
@@ -34,4 +35,12 @@ test('website chat discovery never clicks navigation links', () => {
   assert.equal(isSafeChatLauncher({ tagName: 'DIV', href: '' }), true)
   assert.equal(isSafeChatLauncher({ tagName: 'A', href: 'https://wa.me/15550100' }), false)
   assert.equal(isSafeChatLauncher({ tagName: 'A', href: '#chat' }), false)
+})
+
+test('website chat discovery skips unresolved and blank child frames', () => {
+  assert.equal(isInspectableFrameUrl('https://example.com/chat-frame'), true)
+  assert.equal(isInspectableFrameUrl('http://example.com/chat-frame'), true)
+  assert.equal(isInspectableFrameUrl(''), false)
+  assert.equal(isInspectableFrameUrl('about:blank'), false)
+  assert.equal(isInspectableFrameUrl('data:text/html,chat'), false)
 })

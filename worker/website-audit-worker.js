@@ -13,7 +13,7 @@ const {
 } = require('../lib/website-audit-state')
 
 class WebsiteAuditWorker {
-  constructor({ store, browser, workerId, journal, notifyFinal, now = () => new Date() }) {
+  constructor({ store, browser, workerId, journal, notifyFinal, now = () => new Date(), mappingTimeoutMs = 45000 }) {
     if (!store || !browser) throw new Error('WebsiteAuditWorker requires a store and browser adapter')
     this.store = store
     this.browser = browser
@@ -21,6 +21,27 @@ class WebsiteAuditWorker {
     this.journal = journal || { append() {} }
     this.notifyFinal = notifyFinal || (async () => {})
     this.now = now
+    this.mappingTimeoutMs = Math.max(1, Number(mappingTimeoutMs) || 45000)
+  }
+
+  async _withMappingDeadline(operation) {
+    let timer
+    try {
+      return await Promise.race([
+        operation,
+        new Promise((resolve, reject) => {
+          timer = setTimeout(() => reject(Object.assign(
+            new Error('Website contact-path mapping took too long'),
+            {
+              code: 'website_mapping_timeout',
+              publicMessage: 'Website contact-path mapping took too long, so the audit stopped safely without sending a message.'
+            }
+          )), this.mappingTimeoutMs)
+        })
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
   }
 
   async _event(auditId, type, details = {}, at = this.now()) {
@@ -109,7 +130,7 @@ class WebsiteAuditWorker {
       }, this.now()))
       await this._evidence(auditId, 'Website opened')
 
-      const findings = await this.browser.inspectBuyerJourney(openState)
+      const findings = await this._withMappingDeadline(this.browser.inspectBuyerJourney(openState))
       await this.store.update(auditId, current => recordWebsiteFindings(current, {
         ...openState,
         ...findings,
