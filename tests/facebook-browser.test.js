@@ -319,6 +319,27 @@ test('session evidence accepts owner-only controls on the authenticated /me prof
   assert.equal(await browser._hasAuthenticatedSessionEvidence(page), true)
 })
 
+test('composer discovery ignores Page comments and selects the Messenger Write-to box', async () => {
+  const messengerComposer = { id: 'messenger', async isVisible() { return true } }
+  const commentComposer = { id: 'comment', async isVisible() { return true } }
+  const collection = values => ({
+    async count() { return values.length },
+    nth(index) { return values[index] }
+  })
+  const page = {
+    locator(selector) {
+      if (String(selector).includes('aria-label^="write to "')) return collection([messengerComposer])
+      if (selector === '[contenteditable="true"][role="textbox"]') {
+        return collection([messengerComposer, commentComposer])
+      }
+      return collection([])
+    }
+  }
+  const browser = new FacebookMessengerBrowser({ profileDirectory: 'test-profile' })
+
+  assert.equal(await browser._findComposer(page), messengerComposer)
+})
+
 test('sendMessage stabilizes the conversation baseline before sending', async () => {
   let reads = 0
   const browser = new FacebookMessengerBrowser({ profileDirectory: 'test-profile' })

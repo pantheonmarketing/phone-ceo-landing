@@ -253,7 +253,7 @@ class FacebookMessengerBrowser {
     const selectors = [
       '[data-audit-composer]',
       'textarea[placeholder*="message" i]',
-      '[contenteditable="true"][role="textbox"]',
+      '[contenteditable="true"][role="textbox"][aria-label^="write to " i]',
       '[role="textbox"][aria-label*="message" i]'
     ]
     for (const selector of selectors) {
