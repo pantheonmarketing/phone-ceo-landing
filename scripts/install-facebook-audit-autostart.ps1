@@ -42,4 +42,17 @@ Register-ScheduledTask `
   -Description 'Runs the authorized Phone CEO Facebook audit worker at Windows login and restarts it after failures.' `
   -Force | Out-Null
 
+$desktopDirectory = [Environment]::GetFolderPath('Desktop')
+$dashboardShortcutPath = Join-Path $desktopDirectory 'Facebook Audit Dashboard.url'
+$dashboardShortcut = @(
+  '[InternetShortcut]'
+  'URL=http://127.0.0.1:4317/'
+)
+[System.IO.File]::WriteAllLines(
+  $dashboardShortcutPath,
+  $dashboardShortcut,
+  [System.Text.UTF8Encoding]::new($false)
+)
+
 Write-Output "AUTOSTART_TASK_INSTALLED=$taskName"
+Write-Output "DASHBOARD_SHORTCUT_INSTALLED=$dashboardShortcutPath"

@@ -31,7 +31,7 @@ This split keeps the hard two-minute F rule authoritative while preserving the r
 2. Double-click `Start Facebook Audit Agent.vbs`. The private dashboard opens and the agent begins watching the queue. The worker fails safely if its browser adapter does not report that the dedicated profile was selected; it never treats that signal as account-identity verification.
 3. Leave the Windows machine signed in. New authorized form submissions are picked up automatically; no command needs to be run per audit.
 
-The production workstation also uses the per-user scheduled task `Phone CEO Facebook Audit Worker`. It starts at Windows login, runs hidden, and Task Scheduler restarts it after failures. The local dashboard remains available at `http://127.0.0.1:4317/` without opening a browser window automatically.
+The production workstation also uses the per-user scheduled task `Phone CEO Facebook Audit Worker`. It starts at Windows login, runs hidden, and Task Scheduler restarts it after failures. The installer also adds a `Facebook Audit Dashboard` shortcut to the Windows desktop, so normal use requires no terminal or commands.
 
 Before the production form is deployed, the same lead form and private report are available through the running local agent at `http://127.0.0.1:4317/facebook-audit.html`. This route is loopback-only, uses the same durable queue, and still requires the authorization checkbox. It lets the real acceptance test run without posting to an outdated production endpoint.
 
