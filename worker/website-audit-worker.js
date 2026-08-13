@@ -1,6 +1,7 @@
 const crypto = require('node:crypto')
 const { classifyFacebookReply } = require('../lib/facebook-audit')
 const { calculateWebsiteAuditScore } = require('../lib/website-audit')
+const { safeTelegramErrorCode } = require('../lib/telegram-notifier')
 const {
   addWebsiteEvidence,
   applyWebsiteReply,
@@ -76,9 +77,10 @@ class WebsiteAuditWorker {
   async _notify(audit) {
     try {
       await this.notifyFinal(audit)
-    } catch {
+    } catch (error) {
       await this.store.update(audit.auditId, current => recordWebsiteEvent(current, 'notification_failed', {
         status: current.status,
+        code: safeTelegramErrorCode(error),
         message: 'Final private notification failed'
       }, this.now())).catch(() => {})
     }
