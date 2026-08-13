@@ -81,7 +81,7 @@ class AuditWorkerController extends EventEmitter {
     try {
       const result = await this.worker.processNext()
       processed = Boolean(result)
-      this.activeAuditId = result && !['passed', 'failed', 'error'].includes(result.status) ? result.auditId : null
+      this.activeAuditId = result && !['completed', 'passed', 'failed', 'error'].includes(result.status) ? result.auditId : null
       this.state = 'idle'
     } catch (error) {
       this.state = 'error'

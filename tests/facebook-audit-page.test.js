@@ -10,14 +10,14 @@ test('public audit form uses the approved dependency-free light design', () => {
   assert.match(page, /--surface:\s*#fff(?:fff)?/i)
   assert.match(page, /--ink:\s*#101a2f/i)
   assert.match(page, /--orange:\s*#ff6238/i)
-  assert.match(page, /One buyer question only/)
+  assert.match(page, /one controlled buyer journey/i)
   assert.match(page, /Authorized test/)
   assert.match(page, /Real timestamps/)
   assert.match(page, /No fake scores/)
   assert.doesNotMatch(page, /cdn\.tailwindcss\.com|iconify/i)
 })
 
-test('light redesign preserves the authorized audit form and result behavior', () => {
+test('light redesign preserves authorization and routes selected channels to the shared report', () => {
   for (const id of [
     'audit-form',
     'businessName',
@@ -34,9 +34,11 @@ test('light redesign preserves the authorized audit form and result behavior', (
     assert.match(page, new RegExp(`id=["']${id}["']`))
   }
 
-  assert.match(page, /I own this Page or have permission to run one response-time test/)
-  assert.match(page, /fetch\(['"]\/api\/facebook-audit['"]/)
+  assert.match(page, /I own the selected website\/Page or have permission to test it/i)
+  assert.match(page, /submitAudit\(['"]\/api\/facebook-audit['"]/)
+  assert.match(page, /submitAudit\(['"]\/api\/website-audit['"]/)
   assert.match(page, /values\.authorized\s*=\s*document\.querySelector\(['"]#authorized['"]\)\.checked/)
   assert.match(page, /result\.classList\.remove\(['"]hidden['"]\)/)
   assert.match(page, /form\.classList\.add\(['"]hidden['"]\)/)
+  assert.match(page, /audit-result\.html#/)
 })

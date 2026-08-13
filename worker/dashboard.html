@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Hermes Audit Operations</title>
+    <title>AI CEOS Audit Operations</title>
     <style>
       :root {
         --ink: #f6f7fb;
@@ -480,7 +480,7 @@
   <body>
     <header class="topbar">
       <div class="brand">
-        <span class="shield">H</span><span>Hermes Audit Operations</span>
+        <span class="shield">A</span><span>AI CEOS Audit Operations</span>
       </div>
       <div class="worker">
         <span id="worker-dot" class="dot"></span
@@ -503,7 +503,7 @@
             <small>Running</small><strong id="metric-running">0</strong>
           </div>
           <div class="metric">
-            <small>Passed</small><strong id="metric-passed">0</strong>
+            <small>Completed</small><strong id="metric-passed">0</strong>
           </div>
           <div class="metric">
             <small>Attention</small><strong id="metric-attention">0</strong>
@@ -570,7 +570,13 @@
             })
           : "—";
       const latest = (audit) => audit.events?.at(-1);
-      const active = new Set(["starting", "message_sent", "waiting"]);
+      const active = new Set([
+        "starting",
+        "mapping",
+        "testing",
+        "message_sent",
+        "waiting",
+      ]);
       function renderWorker() {
         const worker = state.worker || {};
         const dot = document.querySelector("#worker-dot");
@@ -596,10 +602,13 @@
         ]);
         document.querySelector("#metric-running").textContent = count([
           "starting",
+          "mapping",
+          "testing",
           "message_sent",
           "waiting",
         ]);
         document.querySelector("#metric-passed").textContent = count([
+          "completed",
           "passed",
         ]);
         document.querySelector("#metric-attention").textContent = count([
@@ -620,7 +629,7 @@
           .map((a) => {
             const event = latest(a);
             const secondary = a.score
-              ? `${a.score.grade} · ${a.score.label}`
+              ? `${Number.isFinite(a.score.total) ? `${a.score.total}/100` : a.score.grade} · ${a.score.label}`
               : a.error
                 ? `${a.error.code} · ${a.error.message}`
                 : event?.message || event?.type || "Queued";
@@ -638,7 +647,7 @@
         if (!audit.sentAt) return "Clock not started";
         const deadline = new Date(audit.deadlineAt).getTime();
         const remaining = Math.max(0, deadline - Date.now());
-        if (["passed", "failed", "error"].includes(audit.status))
+        if (["completed", "passed", "failed", "error"].includes(audit.status))
           return audit.completedAt
             ? `Completed ${time(audit.completedAt)}`
             : "Completed";
@@ -647,8 +656,11 @@
       function renderDetail() {
         const audit = state.audits.find((a) => a.auditId === state.selected);
         if (!audit) return;
+        const channelUrl = audit.websiteUrl || audit.pageUrl;
+        const channelLabel =
+          audit.auditType === "website" ? "Open Website" : "Open Facebook Page";
         document.querySelector("#detail-header").innerHTML =
-          `<p class="eyebrow">Every worker action, as it happens</p><div class="row" style="margin-top:7px"><h1>${esc(audit.businessName)}</h1><span class="chip ${esc(audit.status)}">${esc(audit.status.replaceAll("_", " "))}</span></div><div class="meta"><span>${esc(audit.auditId)}</span><span>Submitted ${time(audit.requestedAt)}</span><a href="${esc(audit.pageUrl)}" target="_blank" rel="noopener" style="color:var(--info)">Open Facebook Page</a></div>`;
+          `<p class="eyebrow">Every worker action, as it happens</p><div class="row" style="margin-top:7px"><h1>${esc(audit.businessName)}</h1><span class="chip ${esc(audit.status)}">${esc(audit.status.replaceAll("_", " "))}</span></div><div class="meta"><span>${esc(audit.auditId)}</span><span>${audit.auditType === "website" ? "Website" : "Facebook"}</span><span>Submitted ${time(audit.requestedAt)}</span><a href="${esc(channelUrl)}" target="_blank" rel="noopener" style="color:var(--info)">${channelLabel}</a></div>`;
         const events = audit.events || [];
         document.querySelector("#timeline").innerHTML = events.length
           ? events
@@ -672,7 +684,7 @@
                 c.hasClearNextAction && "Clear next action",
                 c.manuallyReviewed && "Manually reviewed",
               ].filter(Boolean);
-              return `<article class="reply"><div>${esc(reply.text)}</div><div class="audit-id" style="margin-top:7px">${reply.isLate ? "Late reply" : "Detected"} ${time(reply.receivedAt)}</div><div class="reply-flags">${flags.length ? flags.map((flag) => `<span class="flag">${esc(flag)}</span>`).join("") : '<span class="flag">Needs review</span>'}</div>${audit.status === "waiting" ? `<div class="review"><button data-review="useful" data-reply="${esc(reply.replyId)}">Mark useful</button><button data-review="not-useful" data-reply="${esc(reply.replyId)}">Not useful</button></div>` : ""}</article>`;
+              return `<article class="reply"><div>${esc(reply.text)}</div><div class="audit-id" style="margin-top:7px">${reply.isLate ? "Late reply" : "Detected"} ${time(reply.receivedAt)}</div><div class="reply-flags">${flags.length ? flags.map((flag) => `<span class="flag">${esc(flag)}</span>`).join("") : '<span class="flag">Needs review</span>'}</div>${audit.auditType !== "website" && audit.status === "waiting" ? `<div class="review"><button data-review="useful" data-reply="${esc(reply.replyId)}">Mark useful</button><button data-review="not-useful" data-reply="${esc(reply.replyId)}">Not useful</button></div>` : ""}</article>`;
             })
             .join("") || '<div class="empty">No reply detected yet.</div>';
         const evidence =
@@ -682,8 +694,15 @@
                 `<a href="/api/evidence?auditId=${encodeURIComponent(audit.auditId)}&evidenceId=${encodeURIComponent(item.evidenceId)}" target="_blank" rel="noopener">${esc(item.label)}<br><span class="audit-id">${time(item.capturedAt)}</span></a>`,
             )
             .join("") || '<div class="empty">No evidence captured yet.</div>';
+        const scoreDisplay = Number.isFinite(audit.score?.total)
+          ? `${audit.score.total}/100`
+          : audit.score?.grade;
+        const clockLabel =
+          audit.auditType === "website"
+            ? "Website response window"
+            : "Two-minute result clock";
         document.querySelector("#side").innerHTML =
-          `<div class="countdown"><small>Two-minute result clock</small><strong id="countdown-value">${esc(countdown(audit))}</strong></div><div class="safety">Buyer-question guard: ${esc(audit.sendGuard?.state || "unknown")}</div>${audit.score ? `<section class="section"><h2 class="section-title">Result</h2><div class="grade ${esc(audit.score.grade)}">${esc(audit.score.grade)}</div><div class="footer-note">${esc(audit.score.label)}${audit.score.behaviorBand && audit.score.behaviorBand !== audit.score.grade ? ` · ${esc(audit.score.behaviorBand)} diagnostic: ${esc(audit.score.behaviorLabel)}` : ""}</div></section>` : ""}${audit.error ? `<section class="section"><h2 class="section-title">Real failure state · not scored</h2><div class="message" style="border-color:#6a342b">${esc(audit.error.code)}\n${esc(audit.error.message)}</div></section>` : ""}<section class="section"><h2 class="section-title">Buyer question sent</h2><div class="message">${esc(audit.testMessage)}</div></section><section class="section"><h2 class="section-title">Detected replies</h2>${replies}</section><section class="section"><h2 class="section-title">Evidence</h2><div class="evidence">${evidence}</div></section><p class="footer-note">Credentials, cookies, tokens, storage secrets, and browser profile locations are never shown here.</p>`;
+          `<div class="countdown"><small>${clockLabel}</small><strong id="countdown-value">${esc(countdown(audit))}</strong></div><div class="safety">Buyer-question guard: ${esc(audit.sendGuard?.state || "unknown")}</div>${audit.score ? `<section class="section"><h2 class="section-title">Result</h2><div class="grade ${esc(audit.score.grade)}">${esc(scoreDisplay)}</div><div class="footer-note">${esc(audit.score.label)}${audit.score.behaviorBand && audit.score.behaviorBand !== audit.score.grade ? ` · ${esc(audit.score.behaviorBand)} diagnostic: ${esc(audit.score.behaviorLabel)}` : ""}</div></section>` : ""}${audit.error ? `<section class="section"><h2 class="section-title">Real failure state · not scored</h2><div class="message" style="border-color:#6a342b">${esc(audit.error.code)}\n${esc(audit.error.message)}</div></section>` : ""}<section class="section"><h2 class="section-title">Buyer question${audit.sentAt ? " sent" : ""}</h2><div class="message">${esc(audit.testMessage)}</div></section><section class="section"><h2 class="section-title">Detected replies</h2>${replies}</section><section class="section"><h2 class="section-title">Evidence</h2><div class="evidence">${evidence}</div></section><p class="footer-note">Credentials, cookies, tokens, storage secrets, and browser profile locations are never shown here.</p>`;
         document
           .querySelectorAll("[data-review]")
           .forEach((button) =>

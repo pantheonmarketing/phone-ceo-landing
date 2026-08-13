@@ -2,12 +2,13 @@
   "name": "phone-ceo-landing",
   "version": "1.0.0",
   "private": true,
-  "description": "Phone CEO landing pages and the consented Facebook Lost Customer Audit worker",
+  "description": "Phone CEO landing pages and the consented Website and Facebook Lost Customer Audit worker",
   "scripts": {
     "test": "node --test tests/*.test.js",
     "audit:worker": "node worker/facebook-audit-worker.js",
     "audit:login": "node worker/facebook-login.js",
     "audit:smoke": "node scripts/facebook-audit-smoke.js",
+    "audit:website-smoke": "node scripts/website-audit-smoke.js",
     "audit:install-autostart": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install-facebook-audit-autostart.ps1"
   },
   "engines": {

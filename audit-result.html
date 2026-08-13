@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f8f4">
+  <title>AI CEOS Audit Results | EngbrainAI</title>
+  <style>
+    :root{color-scheme:light;--canvas:#f7f8f4;--surface:#fff;--soft:#f1f4f8;--ink:#101a2f;--muted:#5e6878;--blue:#315be8;--orange:#ff6238;--green:#12805c;--red:#c53b4b;--line:#dbe2ea;--peach:#fff0e9;--shadow:0 24px 70px -28px rgba(16,26,47,.24)}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;color:var(--ink);background:radial-gradient(circle at 5% 8%,rgba(255,98,56,.06),transparent 28%),radial-gradient(circle at 96% 88%,rgba(49,91,232,.05),transparent 30%),var(--canvas);font-family:Inter,Arial,sans-serif;-webkit-font-smoothing:antialiased}.hidden{display:none!important}main{width:min(1100px,calc(100% - 36px));margin:auto;padding:48px 0 70px}.top{text-align:center;margin-bottom:34px}.eyebrow{color:var(--blue);font-size:12px;font-weight:900;letter-spacing:.14em;text-transform:uppercase}.top h1{margin:13px 0 8px;font-size:clamp(38px,6vw,62px);letter-spacing:-.05em}.meta{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:13px}.status{padding:5px 10px;border-radius:999px;background:var(--peach);color:#9a371f;font-weight:850;text-transform:capitalize}.card{border:1px solid var(--line);border-radius:26px;background:var(--surface);box-shadow:var(--shadow)}.primary{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,.8fr);gap:22px}.score-card{padding:34px}.label{color:var(--muted);font-size:12px;font-weight:850;letter-spacing:.1em;text-transform:uppercase}.score-row{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin:12px 0}.score-number{font-size:clamp(66px,10vw,104px);font-weight:900;line-height:.85;letter-spacing:-.07em}.score-number small{font-size:24px;color:var(--muted);letter-spacing:-.02em}.grade{display:grid;width:64px;height:64px;place-items:center;border-radius:20px;background:#e9efff;color:var(--blue);font-size:30px;font-weight:900}.verdict{font-size:24px;font-weight:850;letter-spacing:-.025em}.subtext{color:var(--muted);line-height:1.55}.notice{margin-top:20px;padding:15px;border-radius:15px;background:var(--soft);color:var(--muted);font-size:13px;line-height:1.5}.notice.error{background:#fff0f1;color:var(--red)}
+    .journey{padding:30px}.journey h2,.section h2{margin:0 0 22px;font-size:22px;letter-spacing:-.025em}.journey-list{position:relative;display:grid;gap:21px}.journey-list::before{content:"";position:absolute;left:17px;top:18px;bottom:18px;width:2px;background:var(--line)}.journey-step{position:relative;display:flex;gap:13px;align-items:flex-start}.step-icon{display:grid;position:relative;z-index:1;flex:0 0 36px;height:36px;place-items:center;border:3px solid var(--surface);border-radius:50%;background:var(--soft);color:#929cac;box-shadow:0 0 0 1px var(--line);font-size:14px;font-weight:900}.journey-step.done .step-icon{background:#e5f5ef;color:var(--green)}.journey-step.active .step-icon{background:var(--blue);color:#fff;animation:journeyPulse 1.7s ease-in-out infinite}.journey-step.active::after{content:"";position:absolute;left:17px;top:36px;width:2px;height:22px;background:linear-gradient(var(--blue),transparent);animation:journeyConnectorFlow 1.7s ease-in-out infinite}.step-copy strong{display:block;margin-top:2px;font-size:14px}.step-copy span{display:block;margin-top:3px;color:var(--muted);font-size:12px;line-height:1.4}@keyframes journeyPulse{0%,100%{box-shadow:0 0 0 1px var(--line),0 0 0 0 rgba(49,91,232,.28)}50%{box-shadow:0 0 0 1px var(--line),0 0 0 10px rgba(49,91,232,0)}}@keyframes journeyConnectorFlow{0%,100%{opacity:.25;transform:scaleY(.5);transform-origin:top}50%{opacity:1;transform:scaleY(1)}}
+    .section{margin-top:22px;padding:30px}.channel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.channel-card{padding:24px;border:1px solid var(--line);border-radius:20px;background:var(--surface)}.channel-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.channel-title{display:flex;gap:11px;align-items:center}.channel-icon{display:grid;width:39px;height:39px;place-items:center;border-radius:13px;background:#edf1ff;color:var(--blue);font-weight:900}.channel-card h3{margin:0;font-size:18px}.channel-state{margin-top:4px;color:var(--muted);font-size:12px;text-transform:capitalize}.channel-score{font-size:30px;font-weight:900}.channel-score small{font-size:13px;color:var(--muted)}.metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-top:18px}.metric{padding:12px;border-radius:13px;background:var(--soft)}.metric span{display:block;color:var(--muted);font-size:10px;font-weight:800;text-transform:uppercase}.metric strong{display:block;margin-top:5px;font-size:14px}.breakdown{display:grid;gap:9px;margin-top:16px}.bar-row{display:grid;grid-template-columns:minmax(110px,1fr) 2fr 42px;gap:9px;align-items:center;color:var(--muted);font-size:11px}.bar{height:7px;overflow:hidden;border-radius:999px;background:#e4e9ef}.bar i{display:block;height:100%;border-radius:inherit;background:var(--blue)}
+    .friction-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}.friction-item{padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--soft)}.friction-item span{display:block;color:var(--muted);font-size:10px;font-weight:850;text-transform:uppercase}.friction-item strong{display:block;margin-top:7px;font-size:16px}.conversation{display:grid;grid-template-columns:1fr 1fr;gap:16px}.bubble{padding:18px;border-radius:18px;background:var(--soft);color:var(--ink);line-height:1.55;white-space:pre-wrap}.bubble.business{background:#edf1ff}.bubble-label{display:block;margin-bottom:8px;color:var(--muted);font-size:10px;font-weight:850;letter-spacing:.09em;text-transform:uppercase}.opportunity{border-left:5px solid var(--orange);background:linear-gradient(90deg,#fff9f6,var(--surface) 55%)}.opportunity p{color:var(--muted);line-height:1.6}.opportunity a{display:inline-flex;padding:13px 18px;border-radius:13px;background:var(--ink);color:#fff;font-weight:850;text-decoration:none}.calculator{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.calculator label{color:var(--muted);font-size:11px;font-weight:850;text-transform:uppercase}.calculator input{width:100%;margin-top:7px;padding:13px;border:1px solid var(--line);border-radius:12px;background:var(--soft);font:inherit}.estimate{display:flex;justify-content:space-between;gap:20px;align-items:center;margin-top:16px;padding:18px;border-radius:16px;background:var(--ink);color:#fff}.estimate strong{font-size:30px;color:var(--orange)}.estimate small{max-width:370px;color:#b6bfd3;line-height:1.45}details{margin-top:22px}summary{padding:17px 20px;border-radius:15px;background:var(--soft);color:var(--muted);font-weight:850;cursor:pointer}.timeline{display:grid;gap:10px;margin-top:15px}.event{padding:14px 16px;border-left:3px solid var(--blue);border-radius:0 13px 13px 0;background:var(--surface)}.event strong{font-size:11px;text-transform:uppercase}.event time{float:right;color:var(--muted);font-size:11px}.event p{margin:5px 0 0;color:var(--muted);font-size:12px}.error-box{padding:24px;text-align:center;color:var(--red)}footer{padding-top:28px;color:var(--muted);font-size:12px;text-align:center}
+    @media(max-width:850px){.primary,.channel-grid{grid-template-columns:1fr}.friction-grid{grid-template-columns:repeat(2,1fr)}.conversation{grid-template-columns:1fr}}@media(max-width:600px){main{width:min(100% - 24px,1100px);padding-top:32px}.score-card,.journey,.section{padding:22px}.score-row{align-items:flex-start}.friction-grid,.calculator{grid-template-columns:1fr}.estimate{align-items:flex-start;flex-direction:column}.bar-row{grid-template-columns:105px 1fr 34px}}@media(prefers-reduced-motion:reduce){.journey-step.active .step-icon,.journey-step.active::after{animation:none!important}}
+  </style>
+</head>
+<body>
+  <main>
+    <header class="top"><div class="eyebrow">AI CEOS Audit Results</div><h1 id="business">Loading your audit…</h1><div class="meta"><span id="audit-ids"></span><span id="status" class="status">Connecting</span></div></header>
+    <div id="page-error" class="card error-box hidden"></div>
+    <div id="report" class="hidden">
+      <div class="primary">
+        <section class="card score-card"><div class="label">Performance score</div><div class="score-row"><div id="score" class="score-number">--<small>/100</small></div><div id="grade" class="grade">--</div></div><div id="verdict" class="verdict">Audit in progress</div><p id="score-note" class="subtext">The combined score appears only after every selected channel has a verified result.</p><div id="failure-note" class="notice error hidden">An operational failure, not a score. The affected channel remains unscored and cannot lower or inflate the other channel.</div></section>
+        <aside class="card journey"><h2>Audit journey</h2><div id="journey" class="journey-list"></div></aside>
+      </div>
+
+      <section class="card section"><h2>Channel results</h2><div id="channels" class="channel-grid"></div></section>
+
+      <section id="friction-section" class="card section hidden"><h2>Buyer Friction Map</h2><div id="friction" class="friction-grid"></div></section>
+
+      <section id="conversation-section" class="card section hidden"><h2>The question and the response</h2><div id="conversation" class="conversation"></div></section>
+
+      <section class="card section opportunity"><div class="label">Where AI can remove the gap</div><h2 id="opportunity-title">Your clearest sales-agent opportunity</h2><p id="opportunity-copy">The recommendation will use only the friction and response behavior measured in this audit.</p><a href="/">See how AI CEOS can fix the gap →</a></section>
+
+      <section class="card section"><h2>What this could be costing you</h2><p class="subtext">This is an estimate based only on the numbers you enter—never a claimed or measured loss.</p><div class="calculator"><label>Monthly buyer inquiries<input id="calc-leads" type="number" min="0" inputmode="decimal" placeholder="Enter inquiries"></label><label>Average customer value<input id="calc-value" type="number" min="0" inputmode="decimal" placeholder="Enter value"></label><label>Assumed missed-opportunity rate<input id="calc-rate" type="number" min="0" max="100" inputmode="decimal" placeholder="Enter percent"></label></div><div class="estimate"><div><span class="bubble-label">Estimated monthly opportunity exposure</span><strong id="estimate">Enter your numbers</strong></div><small>Formula: monthly inquiries × average customer value × your assumed missed-opportunity rate. This calculator does not change the audit score.</small></div></section>
+
+      <details><summary>View full audit evidence</summary><div id="timeline" class="timeline"></div></details>
+    </div>
+    <footer>© 2026 EngbrainAI. A controlled, authorized mystery-customer test.</footer>
+  </main>
+  <script>
+    const params = new URLSearchParams(location.hash.slice(1));
+    const channels = [
+      { key:'website', label:'Website', auditId:params.get('websiteAuditId'), token:params.get('websiteToken'), endpoint:'/api/website-audit', audit:null, score:null },
+      { key:'facebook', label:'Facebook', auditId:params.get('facebookAuditId'), token:params.get('facebookToken'), endpoint:'/api/facebook-audit', audit:null, score:null }
+    ].filter(channel => channel.auditId && channel.token);
+
+    const terminal = audit => ['completed','passed','failed','error'].includes(audit?.status);
+    const fmt = value => value ? new Date(value).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '—';
+    const text = (tag, value, className='') => { const node=document.createElement(tag); node.textContent=value; if(className)node.className=className; return node; };
+    const addMetric = (container, label, value) => { const item=text('div','', 'metric'); item.append(text('span',label),text('strong',value)); container.append(item); };
+
+    function numericScore(channel) {
+      if (!channel.audit?.score) return null;
+      return channel.key === 'website' ? Number(channel.audit.score.total) : Number(channel.audit.score.numericScore);
+    }
+
+    function scoreGrade(value) {
+      if (value >= 85) return 'A'; if (value >= 70) return 'B'; if (value >= 50) return 'C'; if (value >= 30) return 'D'; return 'F';
+    }
+
+    function journeyProgress() {
+      const all = channels.map(channel => channel.audit).filter(Boolean);
+      if (!all.length) return 0;
+      const events = all.flatMap(audit => audit.events || []).map(event => event.type);
+      if (all.every(terminal)) return 5;
+      if (events.includes('reply_detected') || events.includes('contact_paths_mapped')) return 4;
+      if (events.includes('message_sent') || events.includes('testing')) return 3;
+      if (events.includes('messenger_reachable') || events.includes('contact_paths_mapped')) return 2;
+      if (events.includes('page_opened') || events.includes('website_opening') || all.some(audit => audit.status !== 'queued')) return 1;
+      return 0;
+    }
+
+    function renderJourney() {
+      const steps = [
+        ['Submitted','Authorized audit request received'],['Channels opened','The worker reaches each selected public channel'],['Buyer paths mapped','Contact and messaging paths are verified'],['Instant help tested','One authorized question is sent only where allowed'],['Answer evaluated','Usefulness, speed, qualification, and next action are measured'],['Result ready','Verified channel scores are complete']
+      ];
+      const progress = journeyProgress();
+      const root=document.querySelector('#journey'); root.replaceChildren();
+      steps.forEach((step,index) => { const row=text('div','',`journey-step ${index<progress?'done':index===progress?'active':''}`); if(index===progress)row.setAttribute('aria-current','step'); const icon=text('div',index<progress?'✓':String(index+1),'step-icon'); const copy=text('div','', 'step-copy'); copy.append(text('strong',step[0]),text('span',step[1])); row.append(icon,copy); root.append(row); });
+    }
+
+    function addBreakdown(card, entries) {
+      const root=text('div','', 'breakdown');
+      entries.forEach(([label,value,max]) => { const row=text('div','', 'bar-row'); row.append(text('span',label)); const bar=text('div','', 'bar'); const fill=text('i',''); fill.style.width=`${Math.max(0,Math.min(100,100*value/max))}%`; bar.append(fill); row.append(bar,text('strong',`${value}/${max}`)); root.append(row); });
+      card.append(root);
+    }
+
+    function renderChannels() {
+      const root=document.querySelector('#channels'); root.replaceChildren();
+      channels.forEach(channel => {
+        const audit=channel.audit; const card=text('article','', 'channel-card'); const head=text('div','', 'channel-head'); const titleWrap=text('div','', 'channel-title'); titleWrap.append(text('div',channel.key==='website'?'W':'f','channel-icon')); const heading=text('div',''); heading.append(text('h3',channel.label),text('div',audit ? audit.status.replaceAll('_',' ') : 'Connecting','channel-state')); titleWrap.append(heading); head.append(titleWrap); const score=Number.isFinite(channel.score)?`${channel.score}`:'--'; const scoreNode=text('div',score,'channel-score'); scoreNode.append(text('small','/100')); head.append(scoreNode); card.append(head);
+        const metrics=text('div','', 'metrics');
+        if (!audit) { addMetric(metrics,'Status','Waiting for report'); }
+        else if (channel.key==='website') {
+          const o=audit.observations||{}; addMetric(metrics,'Help distance',Number.isFinite(o.contactClicks)?`${o.contactClicks} click${o.contactClicks===1?'':'s'}`:'Not found'); addMetric(metrics,'Instant chat',o.chatAvailable?'Available':'Not found'); addMetric(metrics,'Form fields',String(o.contactFormFieldCount??0)); addMetric(metrics,'Reply',Number.isFinite(o.responseSeconds)?`${o.responseSeconds} sec`:o.messageSent?'No reply in window':'No chat sent');
+          if (audit.score) addBreakdown(card,[['Reachability',audit.score.reachability,20],['Buyer friction',audit.score.buyerFriction,15],['Instant help',audit.score.instantHelp,25],['Answer quality',audit.score.answerQuality,25],['Next action',audit.score.qualificationNextAction,15]]);
+        } else {
+          const b=audit.score?.numericBreakdown; addMetric(metrics,'Messenger',audit.observations?.channelReachable?'Reached':'Not confirmed'); addMetric(metrics,'Useful reply',audit.score?.responseSeconds!=null?`${audit.score.responseSeconds} sec`:'None in window'); addMetric(metrics,'Qualification',audit.observations?.qualificationQuestion?'Yes':'No'); addMetric(metrics,'Clear next step',audit.observations?.clearNextAction||audit.observations?.bookingCta?'Yes':'No');
+          if (b) addBreakdown(card,[['Useful answer',b.usefulAnswer,70],['Response speed',b.responseSpeed,20],['Qualification',b.qualificationQuestion,5],['Next action',b.clearNextAction,5]]);
+        }
+        card.insertBefore(metrics,card.querySelector('.breakdown')); if(audit?.error)card.append(text('div',`${audit.error.message} This is an operational failure, not a score.`,'notice error')); root.append(card);
+      });
+    }
+
+    function renderFriction() {
+      const website=channels.find(channel => channel.key==='website')?.audit; const section=document.querySelector('#friction-section'); if(!website){section.classList.add('hidden');return} section.classList.remove('hidden'); const o=website.observations||{}; const entries=[['Clicks to help',Number.isFinite(o.contactClicks)?String(o.contactClicks):'Not found'],['Channels found',(o.contactMethods||[]).join(', ')||'None'],['Form fields',String(o.contactFormFieldCount??0)],['Mobile layout',o.mobileFriendly===true?'Friendly':o.mobileFriendly===false?'Friction found':'Not verified'],['Instant reply',Number.isFinite(o.responseSeconds)?`${o.responseSeconds} sec`:o.chatAvailable?'No useful reply':'No chat']]; const root=document.querySelector('#friction'); root.replaceChildren(); entries.forEach(([label,value])=>{const item=text('div','', 'friction-item');item.append(text('span',label),text('strong',value));root.append(item)});
+    }
+
+    function renderConversation() {
+      const items=channels.filter(channel => channel.audit).flatMap(channel => { const audit=channel.audit; const replies=audit.replies||[]; if(!audit.sentAt&&!replies.length)return[]; return [{label:`${channel.label} buyer question`,value:audit.customerQuestion,business:false},...replies.map(reply=>({label:`${channel.label} business reply · ${fmt(reply.receivedAt)}`,value:reply.text,business:true}))]; }); const section=document.querySelector('#conversation-section'); if(!items.length){section.classList.add('hidden');return}section.classList.remove('hidden');const root=document.querySelector('#conversation');root.replaceChildren();items.forEach(item=>{const bubble=text('div','',`bubble ${item.business?'business':''}`);bubble.append(text('span',item.label,'bubble-label'),text('span',item.value));root.append(bubble)});
+    }
+
+    function renderTimeline() {
+      const events=channels.flatMap(channel => (channel.audit?.events||[]).map(event=>({...event,channel:channel.label}))).sort((a,b)=>new Date(a.at)-new Date(b.at)); const root=document.querySelector('#timeline');root.replaceChildren();events.forEach(event=>{const item=text('article','', 'event');item.append(text('strong',`${event.channel} · ${event.type.replaceAll('_',' ')}`),text('time',fmt(event.at)));item.append(text('p',event.message||'Recorded'));root.append(item)});
+    }
+
+    function renderOpportunity() {
+      const website=channels.find(channel=>channel.key==='website')?.audit; const facebook=channels.find(channel=>channel.key==='facebook')?.audit; const gaps=[]; if(website){const o=website.observations||{};if(!o.chatAvailable)gaps.push('Your website did not offer verified instant chat for this buyer question');else if(!o.usefulReply)gaps.push('Website chat did not provide a useful answer inside the measured window');if((o.contactClicks??0)>0)gaps.push(`buyers needed ${o.contactClicks} click${o.contactClicks===1?'':'s'} to reach help`)} if(facebook&&!facebook.score?.passed)gaps.push('Facebook did not provide a useful answer within two minutes'); if(!gaps.length&&channels.every(channel=>terminal(channel.audit)))gaps.push('Keep the verified speed and next step consistent across every customer conversation'); document.querySelector('#opportunity-copy').textContent=gaps.length?`${gaps.join('. ')}. One trained AI sales agent can answer the same approved business knowledge across your website and connected messaging channels, then qualify and hand off the buyer.`:'The recommendation will appear when the measured channel results are ready.';
+    }
+
+    function render() {
+      if(!channels.length){document.querySelector('#page-error').textContent='This private report link is incomplete.';document.querySelector('#page-error').classList.remove('hidden');return}
+      document.querySelector('#report').classList.remove('hidden'); const audits=channels.map(channel=>channel.audit).filter(Boolean); const first=audits[0]; if(first)document.querySelector('#business').textContent=first.businessName; document.querySelector('#audit-ids').textContent=channels.map(channel=>channel.auditId).join(' · '); channels.forEach(channel=>{channel.score=numericScore(channel)}); const allScored=channels.length>0&&channels.every(channel => Number.isFinite(channel.score)); const anyError=audits.some(audit=>audit.status==='error'); const allDone=audits.length===channels.length&&audits.every(terminal); const status=document.querySelector('#status');status.textContent=allDone?(anyError?'Partial report':'Complete'):'Live audit'; document.querySelector('#failure-note').classList.toggle('hidden',!anyError);
+      if(allScored){const overall=Math.round(channels.reduce((sum,channel)=>sum+channel.score,0)/channels.length);document.querySelector('#score').firstChild.textContent=String(overall);document.querySelector('#grade').textContent=scoreGrade(overall);document.querySelector('#verdict').textContent=overall>=85?'Ready buyers receive a strong experience':overall>=70?'The buyer journey works, with room to improve':overall>=50?'Customer response is inconsistent':'Important buyer friction was measured';document.querySelector('#score-note').textContent=channels.length===2?'Overall score: equal average of the verified Website and Facebook scores.':'This score uses only the verified selected-channel result.'}else{document.querySelector('#score').firstChild.textContent='--';document.querySelector('#grade').textContent='--';document.querySelector('#verdict').textContent=allDone?'Combined score withheld':'Audit in progress';document.querySelector('#score-note').textContent=allDone?'Every selected channel must have a verified score before a combined score is shown.':'The combined score appears only after every selected channel has a verified result.'}
+      renderJourney();renderChannels();renderFriction();renderConversation();renderTimeline();renderOpportunity();
+    }
+
+    async function refreshChannel(channel) {
+      const response=await fetch(`${channel.endpoint}?auditId=${encodeURIComponent(channel.auditId)}`,{cache:'no-store',headers:{'X-Audit-Report-Token':channel.token}});if(!response.ok)throw new Error(response.status===404?'Report not found':'Report temporarily unavailable');channel.audit=await response.json();
+    }
+    async function refresh(){try{await Promise.all(channels.map(refreshChannel));document.querySelector('#page-error').classList.add('hidden');render()}catch(error){document.querySelector('#page-error').textContent=error.message;document.querySelector('#page-error').classList.remove('hidden');render()}}
+
+    function calculate(){const leads=Number(document.querySelector('#calc-leads').value),value=Number(document.querySelector('#calc-value').value),rate=Number(document.querySelector('#calc-rate').value);document.querySelector('#estimate').textContent=leads>=0&&value>=0&&rate>=0&&document.querySelector('#calc-leads').value&&document.querySelector('#calc-value').value&&document.querySelector('#calc-rate').value?new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(leads*value*rate/100):'Enter your numbers'}
+    ['calc-leads','calc-value','calc-rate'].forEach(id=>document.querySelector(`#${id}`).addEventListener('input',calculate));
+    setInterval(refresh,2000);refresh();
+  </script>
+</body>
+</html>

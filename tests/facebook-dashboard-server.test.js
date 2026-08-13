@@ -145,3 +145,44 @@ test('local dashboard serves the existing audit form and queues only authorized 
   assert.equal(reportResponse.status, 200)
   assert.equal((await reportResponse.json()).auditId, queued.auditId)
 })
+
+test('local dashboard serves the shared report and queues an authorized website audit', async t => {
+  const store = new MemoryAuditStore()
+  const notifications = []
+  const controller = {
+    getStatus: () => ({ state: 'idle', paused: false, lastPollAt: null, activeAuditId: null }),
+    on() {},
+    off() {}
+  }
+  const dashboard = createDashboardServer({
+    store,
+    controller,
+    port: 0,
+    notifyWebsiteInitial: async audit => notifications.push(audit.auditId)
+  })
+  const started = await dashboard.start()
+  t.after(() => dashboard.stop())
+
+  const resultPageResponse = await fetch(`${started.url}audit-result.html`)
+  assert.equal(resultPageResponse.status, 200)
+  assert.match(await resultPageResponse.text(), /AI CEOS Audit Results/i)
+
+  const response = await fetch(`${started.url}api/website-audit`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      businessName: 'Website Test Business',
+      websiteUrl: 'https://example.com',
+      customerQuestion: 'What does your service cost?',
+      authorized: true
+    })
+  })
+  assert.equal(response.status, 200)
+  const queued = await response.json()
+  assert.match(queued.auditId, /^WBA-[A-F0-9]{8}$/)
+  assert.deepEqual(notifications, [queued.auditId])
+
+  const reportResponse = await fetch(`${started.url}api/website-audit?auditId=${queued.auditId}&token=${queued.reportToken}`)
+  assert.equal(reportResponse.status, 200)
+  assert.equal((await reportResponse.json()).auditId, queued.auditId)
+})
