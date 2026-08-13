@@ -27,3 +27,27 @@ test('combined score is shown only when every selected channel has a verified sc
   assert.match(page, /\/api\/website-audit/i)
   assert.match(page, /\/api\/facebook-audit/i)
 })
+
+test('result turns the verified audit into a truthful buyer-to-AI comparison', () => {
+  assert.match(page, /What your buyer experienced/i)
+  assert.match(page, /id="buyer-question"/i)
+  assert.match(page, /id="actual-experience"/i)
+  assert.match(page, /id="ai-preview"/i)
+  assert.match(page, /Illustrative AI response/i)
+  assert.match(page, /approved business information/i)
+  assert.match(page, /never assumes availability, pricing, or other facts/i)
+  assert.match(page, /renderDiagnosis/i)
+  assert.match(page, /customerQuestion/i)
+})
+
+test('result shows three evidence-grounded takeaways and a specific next action', () => {
+  assert.match(page, />Working</i)
+  assert.match(page, />Missing</i)
+  assert.match(page, />Opportunity</i)
+  assert.match(page, /id="finding-working"/i)
+  assert.match(page, /id="finding-missing"/i)
+  assert.match(page, /id="finding-opportunity"/i)
+  assert.match(page, /Preview my AI sales agent/i)
+  assert.match(page, /The preview is not a real business reply/i)
+  assert.doesNotMatch(page, /lower than \d+%|businesses we tested|peer average/i)
+})
